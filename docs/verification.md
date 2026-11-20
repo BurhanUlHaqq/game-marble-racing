@@ -1,6 +1,31 @@
 # Verification report
 
-Tested on November 19, 2026, on Windows build 10.0.26300 with Node 22.16.0 and Chrome 157.0.8103.79. Chrome reported an Intel Arc 140T GPU through ANGLE and Direct3D 11. Browser tests drove the production build on `http://127.0.0.1:4287/`.
+## Surface and guard contact, November 20, 2026
+
+The same two seeded layouts and starting fields ran on every signature course and Classic, for 22 paired races and 154 entrants per build. The comparison used the first generated layout on both builds. The audit sampled moving, grounded marbles ten times per second on lanes at least four marble diameters wide. It measured clearance from the marble to the side-guard collider, including at joins and inside split channels.
+
+| Share of sampled racing time | Previous surface | Updated surface |
+| --- | ---: | ---: |
+| Within one third of a marble diameter of a rail | 30.71% | 8.12% |
+| In a continuous rail run lasting at least one second | 24.79% | 2.15% |
+| In the middle 60% of the deck or branch | 50.65% | 71.28% |
+
+Near-rail time fell in all 22 replays. The eight-second finish window admitted 120 of 154 entrants on the previous surface and 118 on the updated surface. The raw layouts recorded nine and thirteen recoveries respectively. Neither set recorded a mechanism jam. [Previous replays](../verification-output/rail-physics/before-full.json) · [Updated replays](../verification-output/rail-physics/guards-full.json)
+
+With normal broadcast course selection, all 80 entrants finished across the ten signature courses on seed `postmark-26`, with zero recoveries. Four of eight finished the selected Classic race, with three recoveries. The physics tests also check that marbles roll inward from either shoulder, hold an off-center line on the flat portion and keep forward speed after a glancing strike on either rail. [Broadcast course selection](../verification-output/rail-physics/production-selection.json)
+
+The production build completed an eight-marble Cedar Creek race in Chrome at native 3840 × 2160 with antialiasing. All eight crossed the line and appeared on the results stand. The race recorded zero recoveries, page errors or WebGL context losses. On this machine the 90-second course preset averaged 47.2 FPS in a 20-second sample. The 60-second preset averaged 58.0 FPS with a 16.9 ms 95th-percentile frame interval in the same 22-second sampling window used for the earlier broadcast review. [Marbles on the slalom](../verification-output/rail-physics/racing-field.jpg) · [Results stand](../verification-output/rail-physics/results.jpg) · [90-second preset timing](../verification-output/rail-physics/frame-rate.json) · [60-second preset timing](../verification-output/rail-physics/matched-frame-rate.json)
+
+## Native 4K broadcast review, November 20, 2026
+
+- Chrome on an Intel Arc 140T rendered the eight-marble Cedar Creek race at 3840 × 2160 throughout a 22-second sample. The game averaged 58.9 FPS, with a 16.8 ms 95th-percentile frame interval. A separate 1920 × 1080 viewport at 2× display density also produced a 3840 × 2160 WebGL buffer. Both used the default High preset and hardware antialiasing. [Browser measurements](../verification-output/crew-review/UHD.json) · [Full-resolution mill shot](../verification-output/crew-review/UHD-landmark.png)
+- A 28-second recording includes the lineup, countdown, release and first wide shot. Playback verification measured 3840 × 2160 and an audible stereo mix during all four sampled moments. [4K opening](../verification-output/crew-review/ZeeRush-4K-Opening.webm) · [Playback check](../verification-output/crew-review/playback.json)
+- Across 165 grids covering the eleven courses, three obstacle levels and five entrant counts, all 990 throws made a physical landing. First contact occurred 0.48–1.07 seconds after release. The largest difference between fingertip velocity and the simulated release velocity was 0.00024 world units per second. [Throw audit](../verification-output/crew-review/throws.json)
+- Across 22 race replays, the complete leader silhouette stayed inside the main picture in 99.98% of 19,340 samples. Both members of a close contest remained visible in 99.8% of qualifying samples. The winner display showed all eight entrants when all eight finished at Aurora, in a real-time Cedar Creek race with five finishers, and in a forced-cutoff race with one finisher. All eight remained on display until the following grid. [Camera measurements](../verification-output/camera-review/ensemble.json) · [Eight-marble results](../verification-output/crew-review/UHD-results.png)
+
+## Earlier verification
+
+The November 19 checks used Windows build 10.0.26300, Node 22.16.0 and Chrome 157.0.8103.79. Chrome reported an Intel Arc 140T GPU through ANGLE and Direct3D 11. Browser tests drove the production build on `http://127.0.0.1:4287/`.
 
 ## Build and automated checks
 

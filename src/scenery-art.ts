@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SIGNATURES } from './signatures';
 import type { TrackId } from './signatures';
 import { Random } from './random';
-import { PAW } from './grid-launch';
+import { ELBOW, PAW, PAD_HEIGHT, SHOULDER } from './grid-launch';
 import type { ScenicSite, ScenicTerrain } from './scenic-terrain';
 import type { Plan } from './track';
 
@@ -178,6 +178,7 @@ const cylinder = new T.CylinderGeometry(1, 1, 1, 16);
 const slope = new T.CylinderGeometry(.83, 1, 1, 12);
 const cone = new T.ConeGeometry(1, 1, 9);
 const ball = new T.SphereGeometry(1, 10, 7);
+const plush = new T.SphereGeometry(1, 20, 14);
 const gem = new T.SphereGeometry(1, 6, 4);
 const flag = new T.BufferGeometry();
 flag.setAttribute('position', new T.Float32BufferAttribute([0, .5, .03, 1, .22, .03, 0, -.5, .03, 0, .5, -.03, 1, .22, -.03, 0, -.5, -.03], 3));
@@ -245,60 +246,77 @@ export const GRID_ANIMALS = ['fox', 'frog', 'penguin', 'rabbit', 'bear', 'panda'
 type GridAnimal = typeof GRID_ANIMALS[number];
 
 export function throwerModel(animal: GridAnimal, scarf: string) {
-  const body = new Model(), arm = new Model();
+  const feet = new Model(), body = new Model(), head = new Model(), balance = new Model();
+  const upper = new Model(), lower = new Model(), palm = new Model();
   const fur = { fox: '#e77a36', frog: '#78bb55', penguin: '#354966', rabbit: '#c4a0d2',
     bear: '#c58952', panda: '#fff2df', koala: '#879eae', raccoon: '#7e828a' }[animal];
   const cream = '#fff0cb', eye = '#242b3a';
   const limb = animal === 'panda' || animal === 'raccoon' ? '#424656' : fur;
-  body.add(ball, fur, 0, .66, 0, .40, .54, .33);
-  body.add(ball, cream, 0, .66, .23, .29, .41, .14);
-  for (const s of [-1, 1]) body.add(ball, animal === 'penguin' ? '#e6a342' : limb, s*.22, .12, .09, .22, .13, .28);
-  body.add(ball, fur, 0, 1.33, 0, .51, .44, .39);
-  body.add(ball, scarf, 0, .99, .015, .41, .10, .34);
-  body.add(ball, scarf, -.19, .87, .29, .085, .17, .045, -.25);
-  body.add(ball, limb, -.43, .73, .075, .13, .27, .15, -.39);
+  body.add(plush, fur, 0, .66, 0, .40, .54, .33);
+  body.add(plush, cream, 0, .66, .23, .29, .41, .14);
+  for (const s of [-1, 1]) feet.add(plush, animal === 'penguin' ? '#e6a342' : limb, s*.22, .12, .09, .22, .13, .28);
+  head.add(plush, fur, 0, 1.33, 0, .51, .44, .39);
+  body.add(plush, scarf, 0, .99, .015, .41, .10, .34);
+  body.add(plush, scarf, -.19, .87, .29, .085, .17, .045, -.25);
+  balance.add(plush, limb, -.43, .69, .09, .13, .27, .15, -.39);
+  balance.add(plush, limb, -.52, .48, .10, .13, .13, .14);
   for (const s of [-1, 1]) {
     if (animal === 'fox' || animal === 'raccoon') {
-      body.add(cone, fur, s*.31, 1.74, -.025, .23, .49, .18, -s*.19);
-      body.add(cone, animal === 'fox' ? '#673e48' : eye, s*.31, 1.77, .075, .135, .30, .095, -s*.19);
-      body.add(ball, cream, s*.18, 1.23, .31, .23, .14, .12, s*.12);
-      if (animal === 'raccoon') body.add(ball, eye, s*.21, 1.44, .30, .27, .16, .11, s*.32);
+      head.add(cone, fur, s*.31, 1.74, -.025, .23, .49, .18, -s*.19);
+      head.add(cone, animal === 'fox' ? '#673e48' : eye, s*.31, 1.77, .075, .135, .30, .095, -s*.19);
+      head.add(plush, cream, s*.18, 1.23, .31, .23, .14, .12, s*.12);
+      if (animal === 'raccoon') head.add(plush, eye, s*.21, 1.44, .30, .27, .16, .11, s*.32);
     } else if (animal === 'frog') {
-      body.add(ball, fur, s*.268, 1.64, .015, .235, .22, .23);
+      head.add(plush, fur, s*.268, 1.64, .015, .235, .22, .23);
     } else if (animal === 'penguin') {
-      body.add(ball, cream, s*.16, 1.34, .28, .235, .28, .15);
+      head.add(plush, cream, s*.16, 1.34, .28, .235, .28, .15);
     } else if (animal === 'rabbit') {
-      body.add(ball, fur, s*.22, 1.86, -.035, .14, .43, .12, -s*.16);
-      body.add(ball, '#eaa9b0', s*.23, 1.88, .047, .077, .31, .055, -s*.16);
-      body.add(ball, cream, s*.10, 1.22, .34, .145, .11, .095);
+      head.add(plush, fur, s*.22, 1.86, -.035, .14, .43, .12, -s*.16);
+      head.add(plush, '#eaa9b0', s*.23, 1.88, .047, .077, .31, .055, -s*.16);
+      head.add(plush, cream, s*.10, 1.22, .34, .145, .11, .095);
     } else if (animal === 'koala') {
-      body.add(ball, fur, s*.45, 1.53, -.02, .24, .24, .15);
-      body.add(ball, '#efd4c4', s*.48, 1.54, .057, .15, .16, .10);
+      head.add(plush, fur, s*.45, 1.53, -.02, .24, .24, .15);
+      head.add(plush, '#efd4c4', s*.48, 1.54, .057, .15, .16, .10);
     } else {
-      body.add(ball, limb, s*.345, 1.68, -.05, .18, .18, .12);
-      if (animal === 'panda') body.add(ball, limb, s*.19, 1.42, .31, .18, .205, .105, -s*.35);
-      else body.add(ball, '#efd3a0', s*.35, 1.69, .018, .105, .10, .070);
+      head.add(plush, limb, s*.345, 1.68, -.05, .18, .18, .12);
+      if (animal === 'panda') head.add(plush, limb, s*.19, 1.42, .31, .18, .205, .105, -s*.35);
+      else head.add(plush, '#efd3a0', s*.35, 1.69, .018, .105, .10, .070);
     }
     const y = animal === 'frog' ? 1.67 : 1.44, x = s*(animal === 'frog' ? .268 : .192);
     const z = animal === 'frog' ? .21 : .365;
-    body.add(ball, '#fffae8', x, y, z, .123, .14, .08);
-    body.add(ball, eye, x + .012, y, z + .066, .070, .089, .033);
-    body.add(ball, '#ffffff', x - .009, y + .030, z + .096, .021, .024, .012);
-    body.add(ball, '#e8a58a', s*.315, 1.23, .29, .083, .044, .048);
+    head.add(plush, '#fffae8', x, y, z, .123, .14, .08);
+    head.add(plush, eye, x + .012, y, z + .066, .070, .089, .033);
+    head.add(plush, '#ffffff', x - .009, y + .030, z + .096, .021, .024, .012);
+    head.add(plush, '#e8a58a', s*.315, 1.23, .29, .083, .044, .048);
   }
-  if (animal === 'bear' || animal === 'panda') body.add(ball, cream, 0, 1.22, .33, .225, .155, .12);
-  if (animal === 'koala') body.add(ball, eye, 0, 1.30, .389, .115, .167, .11);
+  if (animal === 'bear' || animal === 'panda') head.add(plush, cream, 0, 1.22, .33, .225, .155, .12);
+  if (animal === 'koala') head.add(plush, eye, 0, 1.30, .389, .115, .167, .11);
   else if (animal !== 'penguin' && animal !== 'frog') {
-    body.add(ball, animal === 'rabbit' ? '#c67689' : eye, 0, 1.28, .453, .105, .070, .075);
+    head.add(plush, animal === 'rabbit' ? '#c67689' : eye, 0, 1.28, .453, .105, .070, .075);
   }
-  if (animal === 'penguin') body.add(cone, '#f6b33f', 0, 1.27, .42, .15, .27, .105, 0, Math.PI/2);
+  if (animal === 'penguin') head.add(cone, '#f6b33f', 0, 1.27, .42, .15, .27, .105, 0, Math.PI/2);
   if (animal === 'frog') {
-    for (let i = -3; i <= 3; i++) body.add(ball, '#395d3e', i*.055, 1.235 + .008*i*i, .374 - .006*i*i, .037,.016,.018);
+    for (let i = -3; i <= 3; i++) head.add(plush, '#395d3e', i*.055, 1.235 + .008*i*i, .374 - .006*i*i, .037,.016,.018);
   }
-  arm.add(ball, limb, .01, -.21, .11, .125, .255, .13, 0, -.48);
-  arm.add(ball, animal === 'frog' ? '#94cc64' : animal === 'panda' || animal === 'raccoon' ? limb : cream,
-    PAW.x, PAW.y, PAW.z, .147, .107, .151);
-  return { body: body.finish(), arm: arm.finish() };
+  const pawColor = animal === 'frog' ? '#94cc64' : animal === 'panda' || animal === 'raccoon' ? limb : cream;
+  upper.add(plush, limb, .006, -.119, .034, .12, .18, .115, 0, -.27);
+  lower.add(plush, limb, .006, -.104, .112, .115, .19, .115, 0, -.81);
+  palm.add(plush, pawColor, 0, 0, .035, .15, PAD_HEIGHT, .19);
+  palm.add(plush, pawColor, -.10, .045, .064, .062, .06, .10);
+  // Rigid vertex weights let the whole articulated character share one draw call.
+  const parts = [feet.finish(), body.finish(), head.finish(), balance.finish(),
+    upper.finish().translate(SHOULDER.x, SHOULDER.y, SHOULDER.z),
+    lower.finish().translate(SHOULDER.x + ELBOW.x, SHOULDER.y + ELBOW.y, SHOULDER.z + ELBOW.z),
+    palm.finish().translate(SHOULDER.x + ELBOW.x + PAW.x, SHOULDER.y + ELBOW.y + PAW.y, SHOULDER.z + ELBOW.z + PAW.z)];
+  for (const [bone, part] of parts.entries()) {
+    const count = part.getAttribute('position').count, indices = new Uint16Array(count * 4), weights = new Float32Array(count * 4);
+    for (let i = 0; i < count; i++) { indices[i * 4] = bone; weights[i * 4] = 1; }
+    part.setAttribute('skinIndex', new T.Uint16BufferAttribute(indices, 4));
+    part.setAttribute('skinWeight', new T.Float32BufferAttribute(weights, 4));
+  }
+  const geometry = mergeGeometries(parts)!;
+  parts.forEach(part => part.dispose());
+  return geometry;
 }
 
 export function grandstand(p: Paint) {

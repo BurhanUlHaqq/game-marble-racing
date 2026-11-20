@@ -4,7 +4,7 @@ import { chromium } from 'playwright-core';
 
 const executablePath = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const output = 'verification-output/course-review';
-const url = 'http://127.0.0.1:4287/?diagnostics=1&session=fresh&seed=postmark-26&track=cedar-creek&raceTarget=60&countdown=3';
+const url = 'http://127.0.0.1:4287/?diagnostics=1&seed=postmark-26&track=cedar-creek&raceTarget=60';
 const errors = [];
 
 async function gridPage(browser, options) {
@@ -78,50 +78,35 @@ async function completedCall(page, expected) {
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath, args: ['--autoplay-policy=no-user-gesture-required', '--enable-unsafe-swiftshader'] });
 try {
-  const full = await gridPage(browser, '&pick=12&marbles=8');
+  const full = await gridPage(browser, '&marbles=8');
   for (const [width, height] of [[640, 360], [1920, 1080]]) {
     await full.setViewportSize({ width, height });
     await full.screenshot({ path: output + '/grid-announcement-' + width + '.png' });
   }
-  const fullDuration = await completedCall(full, 'full');
+  await completedCall(full, 'full');
   await full.waitForFunction(() => window.__zeerush().round === 2 && window.gridCalls.length >= 2, undefined, { timeout: 90000 });
   assert.equal(await full.evaluate(() => window.gridCalls.length), 2);
   await full.close();
-  const quick = await gridPage(browser, '&pick=3&music=0');
-  const shortDuration = await completedCall(quick, 'short');
-  assert.ok(shortDuration < fullDuration);
-  await quick.close();
-  const controls = await gridPage(browser, '&pick=20');
-  await controls.waitForFunction(() => window.__zeerush().resources.gridSpeaking);
-  await controls.keyboard.press('o');
-  const voiceSwitch = controls.locator('select[name=announcer]');
-  await voiceSwitch.selectOption('false');
-  await controls.getByRole('button', { name: 'Apply settings' }).click();
-  assert.equal(await controls.evaluate(() => window.__zeerush().resources.gridSpeaking), false);
-  await voiceSwitch.selectOption('true');
-  await controls.getByRole('button', { name: 'Apply settings' }).click();
-  assert.equal(await controls.evaluate(() => window.gridCalls.length), 1);
-  await controls.close();
-  for (const option of ['announcer=0', 'mute=1']) {
-    const quiet = await gridPage(browser, '&pick=3&' + option);
-    await quiet.waitForFunction(() => window.__zeerush().phase === 'RACING');
-    assert.equal(await quiet.evaluate(() => window.gridCalls.length), 0, option);
-    await quiet.close();
-  }
-  console.log('Full and short cues, repeat rounds, announcer off and master mute passed.');
+  const quiet = await gridPage(browser, '&mute=1');
+  await quiet.keyboard.press('o');
+  assert.equal(await quiet.locator('button,input,select,dialog,form').count(), 0);
+  await quiet.waitForFunction(() => window.__zeerush().phase === 'RACING');
+  assert.equal(await quiet.evaluate(() => window.gridCalls.length), 0);
+  await quiet.close();
+  console.log('Full cue, repeat grids, clean feed and URL mute passed.');
 } finally { await browser.close(); }
 
 const locked = await chromium.launch({ executablePath, args: ['--autoplay-policy=document-user-activation-required', '--enable-unsafe-swiftshader'] });
 try {
-  const late = await gridPage(locked, '&pick=8');
+  const late = await gridPage(locked, '');
   await late.waitForFunction(() => document.querySelector('.timer-number')?.textContent === '02');
   assert.equal(await late.evaluate(() => window.gridCalls.length), 0);
-  await late.keyboard.press('a');
+  await late.mouse.click(20, 20);
   await completedCall(late, 'short');
   await late.close();
-  const after = await gridPage(locked, '&pick=3');
+  const after = await gridPage(locked, '');
   await after.waitForSelector('.countdown-big');
-  await after.keyboard.press('a');
+  await after.mouse.click(20, 20);
   await after.waitForFunction(() => window.__zeerush().phase === 'RACING' && window.__zeerush().resources.audioState === 'running');
   assert.equal(await after.evaluate(() => window.gridCalls.length), 0);
   assert.deepEqual(errors, []);

@@ -4,7 +4,7 @@ import '@fontsource-variable/space-grotesk/wght.css';
 import './style.css';
 import { ShowAudio } from './audio';
 import type { simulate } from './calibration';
-import { DEFAULTS, raceSettings, settingsFrom } from './config';
+import { raceSettings } from './config';
 import type { Settings } from './config';
 import { Diagnostics } from './diagnostics';
 import { Hud } from './hud';
@@ -41,7 +41,7 @@ class Show {
   private worker?: Worker;
   private token = 0;
   private queued?: Queued;
-  private settings: Settings;
+  private readonly settings: Settings;
   private active: Settings;
   private race?: RacePhysics;
   private round = 0;
@@ -57,7 +57,6 @@ class Show {
   private gateTime = 0;
   private lastHud = -1000;
   private shownFinishers = 0;
-  private lastTune = 0;
   private glLost = false;
   private disposed = false;
   private scoredArrivals = 0;
@@ -68,8 +67,8 @@ class Show {
   constructor(root: HTMLElement) {
     this.settings = this.active = this.session.settings;
     this.lifecycle = new Lifecycle(this.settings);
-    this.audio = new ShowAudio(this.settings, () => this.hud.setAudioPrompt(this.audio.awaitingGesture && this.settings.controls === 'show'),this.session.id);
-    this.hud = new Hud(root, this.settings, value => this.configure(value), () => this.audio.enable(), () => this.audio.credits());
+    this.audio = new ShowAudio(this.settings, this.session.id);
+    this.hud = new Hud(root, this.settings);
     this.view = new ShowScene(this.hud.canvasHost);
     this.renderScale = new AdaptiveScale(this.settings.quality);
     this.view.setQuality(this.settings.quality);
@@ -79,7 +78,6 @@ class Show {
     this.observer.observe(this.hud.canvasHost);
     resize();
     const listen = { signal: this.abort.signal };
-    window.addEventListener('keydown', this.key, listen);
     window.addEventListener('click', () => {
       if (this.audio.awaitingGesture) void this.audio.enable();
     }, listen);
@@ -114,39 +112,6 @@ class Show {
   }
 
   private persist() { this.metrics.persistence = saveSession(storage, this.session); }
-
-  private key = (e: KeyboardEvent) => {
-    if (this.audio.awaitingGesture && !e.repeat && !e.altKey && !e.metaKey && !e.ctrlKey) void this.audio.enable();
-    if (e.key === 'Escape') { this.hud.controls.close(); return; }
-    if (e.repeat || e.altKey || e.metaKey || e.ctrlKey || (e.target instanceof HTMLElement && e.target.closest('input,select,textarea'))) return;
-    if (e.key.toLowerCase() === 'o') this.hud.controls.toggle();
-    if (e.key.toLowerCase() === 'a' && !this.audio.awaitingGesture) void this.audio.enable();
-  };
-
-  private configure(value: unknown) {
-    const previous = this.settings;
-    this.settings = settingsFrom({ ...previous, ...(value as Record<string, unknown>), session: 'resume' });
-    const url = new URL(location.href);
-    for (const key of Object.keys(DEFAULTS)) url.searchParams.delete(key);
-    if (url.href !== location.href) history.replaceState(history.state, '', url);
-    this.session.settings = this.settings;
-    this.audio.configure(this.settings);
-    if (previous.mute && this.audio.awaitingGesture) void this.audio.enable();
-    this.hud.controls.set(this.settings);
-    this.persist();
-    if (this.settings.quality !== this.active.quality) {
-      this.renderScale.setQuality(this.settings.quality);
-      this.view.setQuality(this.settings.quality);
-      this.view.setScale(this.renderScale.scale);
-      this.active = { ...this.active, quality: this.settings.quality };
-    }
-    const nextRaceKeys = ['generation', 'seed', 'track', 'obstacles', 'theme', 'roster', 'marbles', 'minMarbles', 'maxMarbles', 'pace', 'raceTarget',
-      'minPace', 'maxPace', 'pick', 'countdown', 'grace', 'celebration', 'results', 'hud', 'championship'] as const;
-    if (nextRaceKeys.some(key => previous[key] !== this.settings[key])) {
-      this.queue(this.race && this.round === this.session.next ? this.round + 1 : this.session.next);
-    }
-    return this.metrics.persistence;
-  }
 
   private queue(number: number) {
     const settings = raceSettings(this.settings, this.session.id, number);
@@ -361,19 +326,7 @@ class Show {
       this.audio.update(race.racers, impacts, p => this.view.screen(p));
     }
     this.hud.markers(ranked, id => this.view.racerScreen(id), active && !this.glLost);
-    if (!this.hud.controls.element.hidden && now - this.lastTune > 750) {
-      this.lastTune = now;
-      const frame = this.metrics.clock();
-      const gfx = this.view.resources();
-      this.hud.controls.diagnostics(`Audio: ${this.audio.status}
-Capture: ${this.hud.canvasHost.clientWidth} × ${this.hud.canvasHost.clientHeight}
-Internal: ${gfx.renderWidth} × ${gfx.renderHeight} (${Math.round(gfx.scale * 100)}%)
-Frame average: ${frame.fps.toFixed(1)} fps
-Course: ${race.plan.seed}
-Obstacles: ${race.plan.level}
-Pacing target: ${this.active.raceTarget}s
-Storage: ${this.metrics.persistence ? 'Available' : 'In-memory only'}`);
-    }
+
   }
 
   private snapshot() {
@@ -394,6 +347,7 @@ Storage: ${this.metrics.persistence ? 'Available' : 'In-memory only'}`);
       racers: race?.ranked().map(r => ({ id: r.id, name: r.identity.name, distance: r.progress.distance, branch: r.progress.branch,
         time: r.finish, dnf: r.dnf, recoveries: r.recoveries, speed: r.speed, surface: r.surface, grounded: r.grounded })),
       recoveries: race?.recoveries, jams: race?.jams, gripSeconds: race ? race.gripTicks * STEP : undefined,
+      camera: this.view.cameraState(), audioStatus: this.audio.status, musicCredits: this.audio.credits(),
       impacts: { ...this.audibleContacts }, finishDisplay: this.view.finishDisplay(),
       resources: { ...race?.resources(), ...this.view.resources(), ...this.audio.resources(), worker: Boolean(this.worker) } };
   }

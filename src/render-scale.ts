@@ -1,8 +1,8 @@
 import type { Settings } from './config';
 
 const presets = {
-  high: { ceiling: 1, floor: 0.63 },
-  medium: { ceiling: 0.79, floor: 0.54 },
+  high: { ceiling: 1, floor: 1 },
+  medium: { ceiling: 1, floor: 0.63 },
   low: { ceiling: 0.57, floor: 0.46 },
 };
 
@@ -31,7 +31,7 @@ export class AdaptiveScale {
 
   sample(ms: number) {
     // A single browser stall is not evidence of sustained rendering pressure.
-    if (ms <= 0 || ms > 200) return;
+    if (this.limits.floor === this.limits.ceiling || ms <= 0 || ms > 200) return;
     this.sampleMs += ms;
     this.frames++;
     if (ms > 24) this.lateFrames++;

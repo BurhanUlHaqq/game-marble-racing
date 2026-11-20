@@ -2,7 +2,7 @@ import * as T from 'three';
 import type { Racer } from './physics';
 import { SIGNATURES } from './signatures';
 import type { TrackId } from './signatures';
-import { branchPoint, point } from './track';
+import { branchPoint, landmarkOrigin, point } from './track';
 import type { Plan, Sample, V3 } from './track';
 
 const box = new T.BoxGeometry(1, 1, 1);
@@ -287,7 +287,7 @@ export class SignatureArt {
     const outside = -m.lean;
     const center = at(.50);
     const next = at(.83);
-    const anchor = mounted(root, center, m.lean * (center.half + 5.48), -.72);
+    const anchor = group(root, landmarkOrigin(plan, m), center.yaw);
     const apron = mounted(root, next, outside * (next.half + 1.05), -1.07);
     switch (this.track) {
       case 'paper-moon': {

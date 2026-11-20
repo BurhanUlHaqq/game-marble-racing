@@ -4,7 +4,7 @@ import { RADIUS } from './identities';
 import type { Phase } from './lifecycle';
 import { STEP } from './physics';
 import type { Racer } from './physics';
-import { clamp, nodeAt, pathPoseAt } from './track';
+import { clamp, landmarkOrigin, nodeAt, pathPoseAt } from './track';
 import type { Module, Plan } from './track';
 
 // Coordinates are across the track, above the marbles and along the track.
@@ -27,7 +27,8 @@ function shotFor(module: Module) {
   return running;
 }
 
-const weightAt = (gap: number) => 1 - MathUtils.smoothstep(gap, 4, 7);
+const weightAt = (gap: number, wide: number) =>
+  1 - MathUtils.smoothstep(gap, 4 + 9 * wide, 7 + 18 * wide);
 
 export class ShowCamera {
   readonly value = new PerspectiveCamera(39, 16 / 9, .06, 240);
@@ -38,6 +39,7 @@ export class ShowCamera {
   private readonly velocity = new Vector3();
   private readonly racerPosition = new Vector3();
   private readonly leadPosition = new Vector3();
+  private readonly landmarkCenter = new Vector3();
   private readonly low = new Vector3();
   private readonly high = new Vector3();
   private readonly side = new Vector3();
@@ -54,17 +56,25 @@ export class ShowCamera {
   private sections: { offset: Vector3; fixedYaw?: number }[] = [];
   private yaw = 0;
   private pullback = 0;
+  wide = 0;
+  private chasingFinish = false;
   private first = true;
 
   reset() {
     this.first = true;
-    this.yaw = this.pullback = 0;
+    this.yaw = this.pullback = this.wide = 0;
+    this.chasingFinish = false;
     this.offset.copy(running);
   }
 
   cut() { this.first = true; }
 
   course(plan: Plan) {
+    const feature = plan.modules.find(m => m.track);
+    if (feature) {
+      this.landmarkCenter.copy(landmarkOrigin(plan, feature));
+      this.landmarkCenter.y += 1.5;
+    }
     this.sections = plan.modules.map(m => ({
       offset: shotFor(m), fixedYaw: m.kind === 'helix' || m.kind === 'terraces' ? plan.nodes[m.from].yaw : undefined,
     }));
@@ -87,8 +97,7 @@ export class ShowCamera {
       podium.z + 8.15 + (results ? 3.45 : 1.15 * reveal));
   }
 
-  private frontGroup(ranked: readonly Racer[], distance: number, alpha: number) {
-    const lead = ranked[0];
+  private frontGroup(ranked: readonly Racer[], lead: Racer, distance: number, alpha: number) {
     this.leadPosition.lerpVectors(lead.previous, lead.p, alpha);
     this.low.set(0, 0, 0);
     this.high.set(0, 0, 0);
@@ -96,7 +105,7 @@ export class ShowCamera {
     let total = 0;
     for (const r of ranked) {
       if (r.dnf || r.finish !== null) continue;
-      const weight = weightAt(distance - r.progress.distance);
+      const weight = weightAt(distance - r.progress.distance, this.wide);
       if (!weight) break;
       this.racerPosition.lerpVectors(r.previous, r.p, alpha).sub(this.leadPosition).multiplyScalar(weight);
       this.low.min(this.racerPosition);
@@ -109,19 +118,26 @@ export class ShowCamera {
   }
 
   // Fit close opponents between the header, ticker and standings, including their whole silhouettes.
-  private fitGroup(ranked: readonly Racer[], distance: number, alpha: number, base: number, dt: number) {
+  private fitGroup(ranked: readonly Racer[], distance: number, alpha: number, base: number, dt: number, landmarkWeight: number) {
     const height = Math.tan(MathUtils.degToRad(this.value.fov / 2));
     const width = height * this.value.aspect;
     let extra = 0;
     for (const r of ranked) {
       if (r.dnf || r.finish !== null) continue;
-      const weight = weightAt(distance - r.progress.distance);
+      const weight = weightAt(distance - r.progress.distance, this.wide);
       if (!weight) break;
       const relative = this.racerPosition.lerpVectors(r.previous, r.p, alpha).sub(this.center);
       const horizontal = (Math.abs(relative.dot(this.right)) + RADIUS + .14) / (.66 * width);
       const vertical = (Math.abs(relative.dot(this.screenUp)) + RADIUS + .14) / (.71 * height);
       const required = relative.dot(this.backward) + Math.max(horizontal, vertical);
       extra = Math.max(extra, (required - base) * weight);
+    }
+    if (landmarkWeight > 0) {
+      const relative = this.racerPosition.subVectors(this.landmarkCenter, this.center);
+      const horizontal = (Math.abs(relative.dot(this.right)) + 2.8) / (.76 * width);
+      const vertical = (Math.abs(relative.dot(this.screenUp)) + 2.4) / (.77 * height);
+      const required = relative.dot(this.backward) + Math.max(horizontal, vertical);
+      extra = Math.max(extra, Math.min(10, required - base) * landmarkWeight);
     }
     this.pullback = MathUtils.damp(this.pullback, extra, extra > this.pullback ? 7 : 2.1, dt);
     return base + this.pullback;
@@ -138,17 +154,40 @@ export class ShowCamera {
     this.finishEye.y += arrived ? 5.95 : 5.50;
   }
 
-  private race(plan: Plan, ranked: readonly Racer[], dt: number, alpha: number) {
-    const lead = ranked[0];
-    if (!lead || lead.finish !== null) {
-      this.finish(plan, true);
-      this.desiredFocus.copy(this.finishFocus);
-      this.desiredPosition.copy(this.finishEye);
-      return;
+  private race(plan: Plan, ranked: readonly Racer[], dt: number, alpha: number, elapsed: number) {
+    const leader = ranked[0];
+    let lead = leader;
+    if (!leader || leader.finish !== null) {
+      const chasing = ranked.find(r => r.finish === null && !r.dnf);
+      let latest = leader?.finish ?? elapsed;
+      for (const r of ranked) {
+        if (r.finish === null) break;
+        latest = r.finish;
+      }
+      const follow = Boolean(chasing && elapsed - latest > 1.72 && plan.length - chasing.progress.distance > (this.chasingFinish ? 12 : 21));
+      if (follow !== this.chasingFinish) this.cut();
+      this.chasingFinish = follow;
+      if (follow && chasing) lead = chasing;
+      else {
+        this.wide = 0;
+        this.finish(plan, true);
+        this.desiredFocus.copy(this.finishFocus);
+        this.desiredPosition.copy(this.finishEye);
+        return;
+      }
     }
     if (lead.dnf) return;
     const distance = lead.progress.distance;
-    this.frontGroup(ranked, distance, alpha);
+    const current = nodeAt(plan, distance), module = plan.modules[current.module];
+    const beat = Math.max(0, elapsed - 4) % 16;
+    const sweep = MathUtils.smoothstep(beat, 0, 1.7) * (1 - MathUtils.smoothstep(beat, 5.9, 7.6));
+    const landmarkView = module.track ? .88 * MathUtils.smoothstep(current.t, .04, .22) * (1 - MathUtils.smoothstep(current.t, .52, .77)) : 0;
+    const wide = this.chasingFinish ? 1 : Math.max(sweep, landmarkView)
+      * MathUtils.smoothstep(plan.length - distance, 12, 27) * (module.dropDegrees ? .10 : 1);
+    this.wide = MathUtils.damp(this.wide, wide, module.dropDegrees ? 4.5 : 3.1, dt);
+    this.frontGroup(ranked, lead, distance, alpha);
+    const landmarkWeight = landmarkView > 0 ? landmarkView * (1 - MathUtils.smoothstep(this.center.distanceTo(this.landmarkCenter), 13, 23)) : 0;
+    if (landmarkWeight > 0) this.center.lerp(this.landmarkCenter, .19 * landmarkWeight);
     const ahead = distance + clamp(lead.speed * .28, .55, 3);
     const section = this.sections[nodeAt(plan, ahead).module];
     const pose = pathPoseAt(plan, ahead, this.heading);
@@ -160,11 +199,14 @@ export class ShowCamera {
     this.offset.lerp(section.offset, 1 - Math.exp(-2.9 * dt));
     this.backward.copy(this.side).multiplyScalar(this.offset.x).addScaledVector(this.forward, this.offset.z);
     this.backward.y = this.offset.y;
+    this.backward.addScaledVector(this.side, -3.80 * this.wide);
+    this.backward.addScaledVector(this.forward, -2.4 * landmarkWeight);
+    this.backward.y += 3.45 * this.wide + 2.7 * landmarkWeight;
     const base = this.backward.length();
     this.backward.multiplyScalar(1 / base);
     this.right.set(this.backward.z, 0, -this.backward.x).normalize();
     this.screenUp.crossVectors(this.backward, this.right);
-    const range = this.fitGroup(ranked, distance, alpha, base, dt);
+    const range = this.fitGroup(ranked, distance, alpha, base, dt, landmarkWeight);
     // Look through damping by a fraction of a second so a fast falling pack stays in frame.
     this.center.addScaledVector(this.velocity, .145);
     this.desiredFocus.copy(this.center).addScaledVector(this.right, range * .115).addScaledVector(this.velocity, .035);
@@ -180,7 +222,7 @@ export class ShowCamera {
     }
   }
 
-  update(plan: Plan, ranked: readonly Racer[], phase: Phase, dt: number, phaseTime: number, podium: Vector3, alpha = 1) {
+  update(plan: Plan, ranked: readonly Racer[], phase: Phase, dt: number, phaseTime: number, podium: Vector3, alpha = 1, raceTime?: number) {
     const queued = phase === 'PREPARE' || phase === 'PICK_MARBLE' || phase === 'COUNTDOWN' || phase === 'NEXT_ROUND';
     const celebrating = phase === 'CELEBRATION' || phase === 'RESULTS';
     if (queued) {
@@ -189,7 +231,8 @@ export class ShowCamera {
       this.desiredPosition.copy(this.gridEye);
     } else if (celebrating) this.podium(phase, phaseTime, podium);
     else {
-      this.race(plan, ranked, dt, alpha);
+      const elapsed = raceTime ?? (phase === 'FINISHING' ? (ranked[0]?.finish ?? 0) + phaseTime : phaseTime);
+      this.race(plan, ranked, dt, alpha, elapsed);
       if (phase === 'RACING' && phaseTime < 2.55) {
         this.lineup(plan, ranked.length || 8, phaseTime, true);
         this.desiredFocus.lerp(this.gridFocus, 1 - MathUtils.smoothstep(phaseTime, .26, 1.38));

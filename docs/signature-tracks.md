@@ -10,30 +10,30 @@ npm run build
 npm run serve
 ```
 
-Use the [broadcast source](http://127.0.0.1:4287/) at 1920×1080 in OBS or Streamlabs. The frame-rate target is 60 FPS on capable hardware. Audio starts automatically where the browser allows autoplay. If you see **Enable sound**, click it or press **A** in the source’s interaction window. Set `track=classic` for the original generator or `track=rotate` for the signature rotation. [Capture setup](streaming.md)
+Use the [broadcast source](http://127.0.0.1:4287/) at 1920×1080 in OBS or Streamlabs. The frame-rate target is 60 FPS on capable hardware. Audio starts automatically where the browser allows autoplay. When the capture browser requires an audio gesture, click once inside the source’s interaction window. Set `track=classic` for the original generator or `track=rotate` for the signature rotation. [Capture setup](streaming.md)
 
 ### Course previews
 
-Each link starts at round one with six marbles and the course’s reserve seed. Use **Settings** or press **O** to choose a course, roster, or seed for the next grid. The default show generates layouts automatically. Preflight can choose a later attempt when a requested seed generates a weaker race. The resolved seed appears under **Diagnostics** in the settings panel.
+Each link selects six marbles and a course seed. The current round number comes from the saved championship. A new browser profile begins at round one. The default show generates layouts automatically, and preflight can select a later attempt when a race has too few finishers. [Broadcast URL options](../README.md#broadcast-url-options)
 
 | Course ID | Signature section and finish | Reserve seed and preview |
 | --- | --- | --- |
-| `paper-moon` | Corrugated cardboard and tape lanes, sorting tray and winner stamp | [postmark-26](http://127.0.0.1:4287/?track=paper-moon&marbles=6&seed=postmark-26&session=fresh) |
-| `cedar-creek` | Millwheel, short moving cork scoop and wooden bypass, raised mill flag | [parcel-19](http://127.0.0.1:4287/?track=cedar-creek&marbles=6&seed=parcel-19&session=fresh) |
-| `bellflower` | Lower glazed drain line and higher rim, porcelain flower bell | [nightshift-43](http://127.0.0.1:4287/?track=bellflower&marbles=6&seed=nightshift-43&session=fresh) |
-| `clockmaker` | Moving distributor gate, three brass chimes and copper bypass, first three arrivals play the finish keys | [gearbox-04](http://127.0.0.1:4287/?track=clockmaker&marbles=6&seed=gearbox-04&session=fresh) |
-| `aurora` | Three grippy snow strips on the inside of a banked hairpin, lanterns light in arrival order | [nightshift-43](http://127.0.0.1:4287/?track=aurora&marbles=6&seed=nightshift-43&session=fresh) |
-| `cloud-quilt` | Three supported fabric rises and satin ribbon, unfolding rosette | [postmark-26](http://127.0.0.1:4287/?track=cloud-quilt&marbles=6&seed=postmark-26&session=fresh) |
-| `truck-art` | Rubber inside line, banked steel outside, original painted enamel and peacock fan | [postmark-26](http://127.0.0.1:4287/?track=truck-art&marbles=6&seed=postmark-26&session=fresh) |
-| `fossil-canyon` | Sandstone terraces and cobbles beside a slate ledge, checkpoint mural and dinosaur reveal | [switchback-71](http://127.0.0.1:4287/?track=fossil-canyon&marbles=6&seed=switchback-71&session=fresh) |
-| `prism-aquarium` | Stacked dry acrylic channels around coral, fish form the winner’s number | [blue-hour-57](http://127.0.0.1:4287/?track=prism-aquarium&marbles=6&seed=blue-hour-57&session=fresh) |
-| `midnight-record` | Felt crossover, rotating vinyl contact region and outer spiral, numbered sleeve and settling tonearm | [switchback-71](http://127.0.0.1:4287/?track=midnight-record&marbles=6&seed=switchback-71&session=fresh) |
+| `paper-moon` | Corrugated cardboard and tape lanes, sorting tray and winner stamp | [postmark-26](http://127.0.0.1:4287/?track=paper-moon&marbles=6&seed=postmark-26) |
+| `cedar-creek` | Millwheel, short moving cork scoop and wooden bypass, raised mill flag | [parcel-19](http://127.0.0.1:4287/?track=cedar-creek&marbles=6&seed=parcel-19) |
+| `bellflower` | Lower glazed drain line and higher rim, porcelain flower bell | [nightshift-43](http://127.0.0.1:4287/?track=bellflower&marbles=6&seed=nightshift-43) |
+| `clockmaker` | Moving distributor gate, three brass chimes and copper bypass, first three arrivals play the finish keys | [gearbox-04](http://127.0.0.1:4287/?track=clockmaker&marbles=6&seed=gearbox-04) |
+| `aurora` | Three grippy snow strips on the inside of a banked hairpin, lanterns light in arrival order | [nightshift-43](http://127.0.0.1:4287/?track=aurora&marbles=6&seed=nightshift-43) |
+| `cloud-quilt` | Three supported fabric rises and satin ribbon, unfolding rosette | [postmark-26](http://127.0.0.1:4287/?track=cloud-quilt&marbles=6&seed=postmark-26) |
+| `truck-art` | Rubber inside line, banked steel outside, original painted enamel and peacock fan | [postmark-26](http://127.0.0.1:4287/?track=truck-art&marbles=6&seed=postmark-26) |
+| `fossil-canyon` | Sandstone terraces and cobbles beside a slate ledge, checkpoint mural and dinosaur reveal | [switchback-71](http://127.0.0.1:4287/?track=fossil-canyon&marbles=6&seed=switchback-71) |
+| `prism-aquarium` | Stacked dry acrylic channels around coral, fish form the winner’s number | [blue-hour-57](http://127.0.0.1:4287/?track=prism-aquarium&marbles=6&seed=blue-hour-57) |
+| `midnight-record` | Felt crossover, rotating vinyl contact region and outer spiral, numbered sleeve and settling tonearm | [switchback-71](http://127.0.0.1:4287/?track=midnight-record&marbles=6&seed=switchback-71) |
 
 ## Implementation
 
 | Files | Ownership |
 | --- | --- |
-| [`signatures.ts`](../src/signatures.ts), [`config.ts`](../src/config.ts), [`hud.ts`](../src/hud.ts) | Stable IDs, seeded rotation, reserve seeds, operator selection and course names |
+| [`signatures.ts`](../src/signatures.ts), [`config.ts`](../src/config.ts), [`hud.ts`](../src/hud.ts) | Stable IDs, seeded rotation, reserve seeds, URL selection and course names |
 | [`track.ts`](../src/track.ts), [`progress.ts`](../src/progress.ts), [`physics.ts`](../src/physics.ts), [`calibration.ts`](../src/calibration.ts) | Shared course geometry, physical routes, material contacts, checkpoint validation, recovery and preflight |
 | [`surfaces.ts`](../src/surfaces.ts), [`audio.ts`](../src/audio.ts) | Shared physical and visual material definitions, rolling and impact synthesis, arrival cues |
 | [`signature-art.ts`](../src/signature-art.ts), [`show-scene.ts`](../src/show-scene.ts), [`camera.ts`](../src/camera.ts), [`main.ts`](../src/main.ts), [`style.css`](../src/style.css) | Procedural props and finish effects, scene staging and disposal, landmark camera and phone-size overlay |

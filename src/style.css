@@ -31,6 +31,7 @@ button { cursor: pointer; }
 .world, .vignette, .stage { position: absolute; inset: 0; }
 .world canvas { width: 100%; height: 100%; display: block; }
 .vignette { pointer-events: none; background: linear-gradient(0deg, #121b24 0%, #121a2380 13%, transparent 35%), linear-gradient(90deg, #101821b5 0%, #10192366 25%, transparent 58%), linear-gradient(180deg, #131c2e6e, transparent 23%); }
+.world[data-shot="podium"] + .vignette { background: linear-gradient(90deg, #101821aa, #10192330 27%, transparent 48%), linear-gradient(0deg, #121b244d, transparent 14%); }
 .bar { position: absolute; z-index: 2; inset: 0 0 auto; height: 7.6cqh; display: flex; align-items: center; justify-content: space-between;
   padding: 0 var(--pad); background: #121c27ed; border-bottom: 1px solid #ffffff22; }
 .brand { display: flex; align-items: center; gap: 0.85cqw; }
@@ -50,9 +51,6 @@ button { cursor: pointer; }
 .race-id { color: #c8d2da; }
 .race-id b { font-size: 0.84cqw; margin-left: 0.17cqw; color: var(--ink); }
 .on-air { color: var(--accent); background: #ff9a5e12; border-color: #ff9a5e38; }
-.settings-toggle { text-transform: uppercase; }
-.settings-toggle:hover, .settings-toggle:focus-visible { background: #ff9a5e28; border-color: var(--accent); }
-.sound-toggle { color: var(--ink); background: #273c4e; border-color: #86aac566; }
 .on-air i, .footer-left i, .grid-header b span, .eyebrow i { display: inline-block; width: 0.35cqw; height: 0.35cqw; border-radius: 50%; background: var(--accent); margin-right: 0.34cqw; vertical-align: 0.12cqw; }
 .main-panel { position: absolute; z-index: 1; top: 20.4cqh; left: 4.0cqw; width: 43cqw; }
 .eyebrow { position: relative; display: inline-flex; align-items: center; gap: 0.28cqw; color: #ffd1b4;
@@ -187,27 +185,6 @@ button { cursor: pointer; }
 [data-hud="off"]:is([data-phase="racing"],[data-phase="finishing"]) :is(.bar,.footer,.race-panel,.route-panel,.marble-tags,.callout) { display: none; }
 [data-phase="celebration"] .world[data-shot="podium"] { animation: podium-arrival 530ms ease-out both; }
 @keyframes podium-arrival { from { opacity: 0.14; } to { opacity: 1; } }
-.operator { position: fixed; z-index: 8; top: 12px; right: 12px; width: min(460px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto;
-  border: 1px solid #ffffff46; background: #152230; box-shadow: 0 12px 44px #0009; border-radius: 12px; padding: 17px; }
-.operator header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px; }
-.operator header h2 { margin: 2px 0 0; font-size: 23px; }
-.operator fieldset { min-inline-size: 0; border: 1px solid #ffffff38; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 10px; margin: 8px 0 12px; padding: 10px; border-radius: 7px; }
-.operator legend { padding: 0 5px; color: #ffcc9e; }
-.operator label { display: grid; gap: 4px; font-size: 12px; color: #d7e0e8; }
-.operator input, .operator select, .operator button { min-width: 0; height: 33px; padding: 4px 7px; border: 1px solid #ffffff35; border-radius: 5px; background: #233746; color: #fff3e0; }
-.operator button { font-weight: 700; padding: 4px 10px; }
-.operator button:first-child:not(.close) { background: #ff9a5e; color: #17222c; }
-.operator button:hover { filter: brightness(1.14); }
-.operator .close { font-size: 21px; line-height: 0.65; }
-.operator-diagnostics { font-size: 12px; color: #d7e0e8; margin-bottom: 12px; }
-.operator-diagnostics summary { cursor: pointer; }
-.operator-actions { position: sticky; bottom: -17px; margin: 0 -17px -17px; padding: 12px 17px;
-  background: #152230; border-top: 1px solid #ffffff38; }
-.operator-buttons { display: flex; gap: 8px; }
-.music-credit-link { align-self: center; color: #9ce0d4; font-size: .85rem; }
-.operator form p { font-size: 12px; color: #cedbe4; margin: 7px 0 0; }
-.operator pre { font-size: 11px; color: #93c7bf; white-space: pre-wrap; margin-bottom: 0; }
-
 @container (max-width: 750px) {
   .bar-track { font-size: max(7px, 0.95cqw); letter-spacing: .06em; }
   .bar-track #themeLabel { max-width: 32cqw; overflow: hidden; text-overflow: ellipsis; }

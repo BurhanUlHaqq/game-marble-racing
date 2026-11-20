@@ -18,13 +18,13 @@ await mkdir(output, { recursive: true });
 const broadcast = { width: 1920, height: 1080 };
 const phone = { width: 640, height: 360 };
 const browser = await chromium.launch({ executablePath, headless: true,
-  args: ['--enable-unsafe-swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'] });
+  args: ['--autoplay-policy=no-user-gesture-required', '--enable-unsafe-swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'] });
 
 async function capture(track) {
   const page = await browser.newPage({ viewport: broadcast });
   const url = new URL(base);
   const seed = process.env.ZEERUSH_SAMPLE_SEED ?? captureSeeds[track] ?? 'postmark-26';
-  url.search = new URLSearchParams({ track, seed, marbles: '6', session: 'fresh', diagnostics: '1', mode: 'operator' });
+  url.search = new URLSearchParams({ track, seed, marbles: '6', diagnostics: '1' });
   const errors = [];
   const surfaces = new Set();
   const samples = [];
@@ -76,8 +76,7 @@ async function capture(track) {
   try {
     await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForFunction(() => window.__zeerush?.().phase === 'PICK_MARBLE', undefined, { timeout: 30000 });
-    await page.getByRole('button', { name: 'Enable audio', exact: true }).click();
-    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => window.__zeerush().audioStatus === 'Enabled');
     const lineup = await snapshot();
     await page.evaluate(() => { globalThis.qaFrameMs = 1000 / 9; });
     let current = lineup;

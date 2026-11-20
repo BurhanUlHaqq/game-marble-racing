@@ -1,6 +1,14 @@
 import { along, clamp, side } from './track';
 import type { Plan, Sample, V3 } from './track';
 import { RADIUS } from './identities';
+import type { Place } from './physics';
+
+export function podiumLayout(places: readonly Place[]) {
+  const medals = places.filter(p => p.time !== null).slice(0, 3);
+  const field = places.filter(p => !medals.includes(p));
+  const pitch = Math.min(1.02, 4.12 / Math.max(1, field.length - 1));
+  return { medals, field, pitch, size: Math.min(1, pitch / .94) };
+}
 
 export const ROLLOUT_SECONDS = 1.65;
 

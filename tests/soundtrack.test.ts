@@ -1,17 +1,15 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {settingsFrom} from '../src/config';
+import {broadcastSettings} from '../src/config';
 import {Random} from '../src/random';
 import {musicMood,MusicRotation} from '../src/soundtrack';
 
-test('sound is on by default and existing operators retain their mute and mix preferences',()=>{
-  const defaults=settingsFrom({});
+test('broadcast sound starts enabled, URL mute silences it and the score follows each phase',()=>{
+  const defaults=broadcastSettings('');
   assert.equal(defaults.mute,false);
   assert.equal(defaults.soundtrack,'library');
-  const saved=settingsFrom({audio:'asmr',mute:true});
-  assert.equal(saved.audio,'asmr');
-  assert.equal(saved.mute,true);
-  assert.equal(settingsFrom(saved,'?soundtrack=synth').soundtrack,'synth');
+  assert.equal(broadcastSettings('?mute=1').mute,true);
+  assert.equal(broadcastSettings('?soundtrack=synth').soundtrack,'library');
   assert.deepEqual([musicMood('PICK_MARBLE',false),musicMood('COUNTDOWN',false),musicMood('RACING',false),
     musicMood('RACING',true),musicMood('FINISHING',false),musicMood('RESULTS',false)],['intermission','intermission','race','chase','chase','celebration']);
 });

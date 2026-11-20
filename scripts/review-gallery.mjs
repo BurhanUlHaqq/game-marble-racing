@@ -27,7 +27,7 @@ try {
             f(stamp+offset);
           });
         });
-        await page.goto('http://127.0.0.1:4287/?track='+track+'&seed=postmark-26&pick=3&countdown=3&raceTarget=60&session=fresh&diagnostics=1&mute=true');
+        await page.goto('http://127.0.0.1:4287/?track='+track+'&seed=postmark-26&raceTarget=60&diagnostics=1&mute=true');
         await page.waitForFunction(t=>{
           const s=window.__zeerush?.();
           if(s?.phase!=='RACING')return false;

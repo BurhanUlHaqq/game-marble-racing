@@ -2,11 +2,11 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import type { Collider, RigidBody } from '@dimforge/rapier3d-compat';
 import { RADIUS } from './identities';
 import type { Identity } from './identities';
-import { gridThrows, heldMarble, HOLD_ANGLE } from './grid-launch';
+import { gridThrows, heldMarble, HOST_SCALE, neutralThrow, throwPose } from './grid-launch';
 import type { GridThrow } from './grid-launch';
 import { compareArrivals, routeProgress } from './progress';
 import type { Progress } from './progress';
-import { along, branchContact, branchPoint, chuteClearance, chutePoint, clamp, deckPoint, point, side } from './track';
+import { along, branchContact, branchPoint, chuteClearance, chutePoint, clamp, deckPoint, side, sweeperDeck } from './track';
 import type { ColliderGeometry, Device, Plan, Surface, V3 } from './track';
 import { Random } from './random';
 import { SURFACES } from './surfaces';
@@ -35,18 +35,20 @@ function rotation(yaw: number, pitch = 0, spin = 0): Q {
 
 export function devicePose(d: Device, seconds: number) {
   const t = seconds + d.phase;
-  if (d.kind === 'roller') return { p: d.p, q: rotation(d.yaw + Math.PI / 2, Math.PI / 2) };
+  if (d.kind === 'roller') return { p: d.p, q: rotation(d.yaw + Math.PI / 2, Math.PI / 2 - Math.atan(d.crossSlope ?? 0)) };
   if (d.kind === 'fin') return { p: d.p, q: rotation(d.yaw, d.grade) };
   if (d.kind === 'swing') {
-    const yaw = d.yaw + Math.sin(t * .78) * .61;
+    const turn = Math.sin(t * .78) * .61;
+    const yaw = d.yaw + turn;
+    const pitch = Math.atan(Math.tan(d.grade) * Math.cos(turn) - (d.crossSlope ?? 0) * Math.sin(turn));
     const arm = d.size.z / 2;
-    return { p: { x: d.p.x + Math.sin(yaw) * Math.cos(d.grade) * arm, y: d.p.y - Math.sin(d.grade) * arm,
-      z: d.p.z + Math.cos(yaw) * Math.cos(d.grade) * arm }, q: rotation(yaw, d.grade) };
+    return { p: { x: d.p.x + Math.sin(yaw) * Math.cos(pitch) * arm, y: d.p.y - Math.sin(pitch) * arm,
+      z: d.p.z + Math.cos(yaw) * Math.cos(pitch) * arm }, q: rotation(yaw, pitch) };
   }
   if (d.sweep) {
-    const travel = Math.sin(t * 1.25) * d.sweep.amplitude;
-    return { p: { x: d.p.x + Math.cos(d.yaw) * travel, y: d.p.y + d.sweep.bank * travel,
-      z: d.p.z - Math.sin(d.yaw) * travel }, q: rotation(d.yaw) };
+    const p = sweeperDeck(d.sweep, Math.sin(t * 1.25) * d.sweep.amplitude);
+    p.y -= .56 * d.size.x / 2;
+    return { p, q: rotation(d.yaw) };
   }
   const yaw = d.yaw + (d.kind === 'paddle' ? t * 0.65 : d.kind === 'gate' ? Math.sin(t * 1.12) * 1.32 : 0);
   const pitch = d.kind === 'tilt' ? d.grade + Math.sin(t * 1.26) * 0.13 : d.kind === 'scoop' || d.kind === 'platter' ? d.grade : 0;
@@ -63,7 +65,7 @@ export type Racer = {
   probe: number; cooldown: number; reason?: string;
   splitIn?: number; splitOut?: number;
   ground?: GroundContact;
-  airTime: number;
+  airTime: number; firstLanding?: number;
 };
 export type Recovery = { id: number; time: number; reason: string; check: number };
 export type Impact = { id: number; force: number; surface: Surface | 'marble' | 'chime' | 'landing'; p: V3 };
@@ -82,7 +84,11 @@ function impactMaterial(d: Device) {
     return { grip: .52, bounce: .075 };
   }
   if (d.kind === 'paddle' || d.kind === 'gate') return { grip: .27, bounce: .19 };
-  return { grip: d.kind === 'roller' ? .46 : .22, bounce: d.kind === 'chime' ? .45 : .36 };
+  if (d.kind === 'roller' || d.kind === 'fin' || (d.kind === 'peg' && d.size.y < RADIUS)) {
+    const material = SURFACES[d.surface];
+    return { grip: material.grip, bounce: material.bounce };
+  }
+  return { grip: .22, bounce: d.kind === 'chime' ? .45 : .36 };
 }
 
 function triangles(g: ColliderGeometry) {
@@ -131,8 +137,11 @@ export class RacePhysics {
           .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min));
         this.tags.set(floor.handle, { surface, floor: true, minNormalY: m.dropDegrees ? Math.cos((m.dropDegrees + 2) * Math.PI / 180) : .46 });
       }
-      const rail = this.world.createCollider(triangles(m.rails).setRestitution(plan.obstacles ? .245 : .34)
-        .setFriction(plan.obstacles ? .145 : .2));
+      // A smooth side guard absorbs the normal impact while a glancing hit preserves travel along it.
+      const guardBounce = .20 + .5 * SURFACES[m.surface].bounce;
+      const rail = this.world.createCollider(triangles(m.rails).setFriction(.12)
+        .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
+        .setRestitution(guardBounce).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Max));
       this.tags.set(rail.handle, { surface: m.surface });
       for (const d of m.devices) {
         if (d.kind === 'belt') continue;
@@ -166,7 +175,7 @@ export class RacePhysics {
     const throws = gridThrows(plan, roster.length);
     for (const [lane, identity] of roster.entries()) {
       const launch = throws[lane];
-      const p = heldMarble(launch, HOLD_ANGLE, { x: 0, y: 0, z: 0 });
+      const p = heldMarble(launch, neutralThrow(), { x: 0, y: 0, z: 0 });
       const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(p.x, p.y, p.z)
         .setLinearDamping(.018).setAngularDamping(.006).setCcdEnabled(true).setCanSleep(false).setGravityScale(0));
       const desc = RAPIER.ColliderDesc.ball(RADIUS).setMass(1).setFriction(0.61).setRestitution(0.23);
@@ -192,9 +201,15 @@ export class RacePhysics {
     this.releaseTick = this.ticks;
     this.gate.setEnabled(false);
     for (const r of this.racers) {
-      r.p = r.previous = heldMarble(r.launch, r.launch.releaseAngle, { x: 0, y: 0, z: 0 });
+      const pose = throwPose(r.launch, 0);
+      r.p = r.previous = heldMarble(r.launch, pose, { x: 0, y: 0, z: 0 });
+      const halfTurn = HOST_SCALE * pose.roll / (2 * RADIUS);
+      r.q = r.previousQ = { x: Math.cos(r.launch.yaw) * Math.sin(halfTurn), y: 0,
+        z: -Math.sin(r.launch.yaw) * Math.sin(halfTurn), w: Math.cos(halfTurn) };
       r.body.setTranslation(r.p, true);
+      r.body.setRotation(r.q, true);
       r.body.setLinvel(r.launch.velocity, true);
+      r.body.setAngvel(r.launch.spin, true);
       r.body.setGravityScale(1, true);
       r.speed = r.launch.speed;
     }
@@ -282,12 +297,12 @@ export class RacePhysics {
       this.visited.add(n.module);
       const u = side(n, r.p);
       const branch = module.track ? branchContact(n, module, u, r.p.y, 1.35) : undefined;
-      const floor = this.plan.obstacles ? deckPoint(n, module, u) : point(n, u);
       const dy = n.pitch !== undefined ? chuteClearance(n, r.p)
-        : (branch?.dy ?? r.p.y - floor.y) + along(n, r.p) * 0.195 * this.plan.gradeFactor;
+        : (branch?.dy ?? r.p.y - deckPoint(n, module, u).y) + along(n, r.p) * 0.195 * this.plan.gradeFactor;
       r.surface = module.surface;
       r.ground = this.groundContact(r, v, seconds);
       r.grounded = Boolean(r.ground);
+      if (r.grounded && r.firstLanding === undefined) r.firstLanding = now;
       if (r.grounded && (r.surface === 'grit' || r.surface === 'brakepad')) this.gripTicks += seconds / STEP;
       r.belt = r.grounded && module.kind === 'conveyor' && n.t > 0.22 && n.t < 0.75;
       if (this.queue && r.ground && r.airTime >= 4 * STEP && r.ground.impulse >= 1.15 && r.cooldown <= now && this.impacts.length < 24) {
@@ -420,7 +435,7 @@ export class RacePhysics {
     const module = this.plan.modules[n.module];
     const across = clamp(offset, -n.half + .65, n.half - .65);
     const p = n.pitch !== undefined ? chutePoint(n, across, RADIUS + .18) : module.track ? branchPoint(n, module, r.progress.branch ? r.progress.branch * module.lean : Math.sign(offset) || 1,
-      clamp(offset * .25, -.55, .55), RADIUS + .18) : this.plan.obstacles ? deckPoint(n, module, across) : point(n, across);
+      clamp(offset * .25, -.55, .55), RADIUS + .18) : deckPoint(n, module, across);
     if (!module.track && n.pitch === undefined) p.y += RADIUS + .18;
     r.body.setTranslation(p, true);
     const pitch = n.pitch ?? 0, forward = Math.cos(pitch) * 1.4;

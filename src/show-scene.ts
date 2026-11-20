@@ -9,11 +9,11 @@ import { devicePose, STEP } from './physics';
 import type { Place, Racer, RacePhysics } from './physics';
 import { Random } from './random';
 import { PALETTES } from './themes';
-import { along, branchPoint, chutePoint, chuteRailTop, deckPoint, gridSurface, nodeAt, point, side, tunnelPoint } from './track';
+import { along, branchPoint, chutePoint, chuteRailTop, deckPoint, gridSurface, nodeAt, point, side, sweeperDeck, tunnelPoint } from './track';
 import type { ColliderGeometry, Device, Module, Plan, Sample, Surface, V3 } from './track';
 import { ShowCamera } from './camera';
 import { GridCrew } from './grid-crew';
-import { bayOffset, finishPoint, finishRack, ROLLOUT_SECONDS, rolloutPosition } from './finish-runout';
+import { bayOffset, finishPoint, finishRack, podiumLayout, ROLLOUT_SECONDS, rolloutPosition } from './finish-runout';
 import type { FinishRack } from './finish-runout';
 import { SIGNATURES } from './signatures';
 import { SignatureArt } from './signature-art';
@@ -30,6 +30,7 @@ const fin = new RoundedBoxGeometry(.22, .43, 1.50, 2, .085);
 const swing = new RoundedBoxGeometry(.32, .43, 1.68, 2, .085);
 const post = new T.CylinderGeometry(1, 1, 1, 18);
 const orb = new T.SphereGeometry(1, 24, 18);
+const marbleSphere = new T.SphereGeometry(1, 64, 40);
 const disc = new T.CylinderGeometry(1, 1, 1, 40);
 const torus = new T.TorusGeometry(1, 0.10, 8, 32);
 const plane = new T.PlaneGeometry(1, 1);
@@ -37,15 +38,18 @@ const planeNormal = new T.Vector3(0, 0, 1);
 const shadowFalloff = 3 * RADIUS;
 type ContactShadow = T.Mesh<T.BufferGeometry, T.MeshBasicMaterial>;
 
-function texture(w: number, h: number, paint: (ctx: CanvasRenderingContext2D) => void) {
+function texture(w: number, h: number, paint: (ctx: CanvasRenderingContext2D) => void, detail = 1) {
   const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = w * detail;
+  canvas.height = h * detail;
   const context = canvas.getContext('2d');
-  if (context) paint(context);
+  if (context) {
+    context.scale(detail, detail);
+    paint(context);
+  }
   const tex = new T.CanvasTexture(canvas);
   tex.colorSpace = T.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.anisotropy = 8;
   return tex;
 }
 
@@ -63,7 +67,7 @@ function woodgrain() {
       ctx.bezierCurveTo(x - 4, y + length * 0.28, x + 4, y + length * 0.65, x, y + length);
       ctx.stroke();
     }
-  });
+  }, 2);
   tex.wrapS = tex.wrapT = T.RepeatWrapping;
   return tex;
 }
@@ -98,10 +102,10 @@ function marbleTexture(identity: Identity) {
       ctx.font = 'bold 37px Arial';
       ctx.fillText(identity.mark, x + 115, 150);
     }
-  });
+  }, 3);
 }
 
-function titleTexture(title: string, sub: string, ink: string, bg: string) {
+function titleTexture(title: string, sub: string, ink: string, bg: string, detail: number) {
   return texture(512, 160, ctx => {
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, 512, 160);
@@ -115,7 +119,7 @@ function titleTexture(title: string, sub: string, ink: string, bg: string) {
       ctx.font = 'bold 21px Arial';
       ctx.fillText(sub, 256, 126);
     }
-  });
+  }, detail);
 }
 
 function materials(p: Palette, grain: T.Texture) {
@@ -239,6 +243,9 @@ class CourseScene {
   private readonly deckLights: T.Mesh[] = [];
   private readonly podium = new T.Group();
   private readonly podiumRacers: T.Mesh[] = [];
+  private readonly fieldSeats: { group: T.Group; marble: T.Mesh; rank?: T.Mesh; retired: T.Mesh }[] = [];
+  private shownPlaces?: readonly Place[];
+  private lineup = podiumLayout([]);
   private rack!: FinishRack;
   private readonly rollouts = new Map<number, { rank: number; start: number }>();
   private readonly parked = new Set<number>();
@@ -404,7 +411,7 @@ class CourseScene {
     yield* details.flush();
     for (const [lane, identity] of roster.entries()) {
       const position = point(this.grid.point, lineupOffset(lane, roster.length), RADIUS / this.grid.normal.y);
-      const marble = mesh(this.route, orb, this.marbleMats[identity.id - 1], position, { x: RADIUS, y: RADIUS, z: RADIUS });
+      const marble = mesh(this.route, marbleSphere, this.marbleMats[identity.id - 1], position, { x: RADIUS, y: RADIUS, z: RADIUS });
       marble.castShadow = true;
       this.gridCrew.ball(lane, marble.position);
       const shadow = mesh(this.route, plane, this.blob.clone(), position);
@@ -550,7 +557,7 @@ class CourseScene {
         this.movers.push({ device: d, mesh: arm });
         details.add(post, m.gold, d.p, .13, .46, .13);
       } else if (d.kind === 'roller') {
-        details.add(roller, m.gold, d.p, 1, 1, 1, d.yaw + Math.PI / 2, Math.PI / 2);
+        details.add(roller, m.gold, d.p, 1, 1, 1, d.yaw + Math.PI / 2, Math.PI / 2 - Math.atan(d.crossSlope ?? 0));
       } else details.add(fin, m.second, d.p, 1, 1, 1, d.yaw, d.grade);
       return;
     }
@@ -563,8 +570,12 @@ class CourseScene {
         assembly.position.copy(devicePose(d, 0).p);
         mesh(assembly, orb, body, zero, { x: radius, y: radius, z: radius });
         mesh(assembly, disc, cap, { x: 0, y: radius * .83, z: 0 }, { x: radius * .58, y: .037, z: radius * .58 });
-        details.add(box, m.gold, nudged(d.p, radius * .56 + .022), d.sweep.amplitude * 2.25, .023, .17,
-          d.yaw, 0, Math.atan(d.sweep.bank));
+        for (let i = -2; i < 2; i++) {
+          const spacing = d.sweep.amplitude * .56;
+          const a = nudged(sweeperDeck(d.sweep, i * spacing), .022);
+          const b = nudged(sweeperDeck(d.sweep, (i + 1) * spacing), .022);
+          bar(details, a, b, .023, .17, m.gold);
+        }
         this.route.add(assembly);
         this.movers.push({ device: d, mesh: assembly });
       } else {
@@ -600,7 +611,7 @@ class CourseScene {
   }
 
   private sign(title: string, sub: string, color: string, background: string, parent: T.Object3D, p: V3, w: number, h: number) {
-    const map = titleTexture(title, sub, color, background);
+    const map = titleTexture(title, sub, color, background, w >= 2 ? 2 : 1);
     const mat = new T.MeshBasicMaterial({ map, toneMapped: false });
     this.disposable.push(mat, map);
     return mesh(parent, plane, mat, p, { x: w, y: h, z: 1 });
@@ -620,18 +631,22 @@ class CourseScene {
       d.add(box, i === 1 ? m.softGold : i === 2 ? m.second : m.pop, { x, y: h / 2, z: 0 }, 1.75, h, 1.28);
       d.add(box, m.cream, { x, y: h + 0.025, z: 0 }, 1.84, 0.08, 1.42);
       this.sign(String(i), '', '#ffebcc', '#293c49', this.podium, { x, y: h * 0.58, z: 0.653 }, 0.62, 0.44);
-      const r = mesh(this.podium, orb, this.marbleMats[0], { x, y: h + 0.55, z: 0 }, { x: 0.55, y: 0.55, z: 0.55 });
+      const r = mesh(this.podium, marbleSphere, this.marbleMats[0], { x, y: h + 0.55, z: 0 }, { x: 0.55, y: 0.55, z: 0.55 });
       r.castShadow = true;
       this.podiumRacers[i - 1] = r;
     }
-    d.add(box, m.trim, { x: 0, y: .22, z: 1.99 }, (entrants - 3) * 1.02 + .22, .28, .99);
-    for (let i = 3; i < entrants; i++) {
-      const x = (i - (entrants + 2) / 2) * 1.02;
-      d.add(disc, m.dark, { x, y: .36, z: 1.98 }, .43, .14, .43);
-      this.sign(String(i + 1), '', '#ffebcc', '#293c49', this.podium, { x, y: .23, z: 2.49 }, .46, .23);
-      const r = mesh(this.podium, orb, this.marbleMats[0], { x, y: .83, z: 1.98 }, { x: .40, y: .40, z: .40 });
+    d.add(box, m.trim, { x: 0, y: .22, z: 1.99 }, 5.1, .28, .99);
+    for (let i = 0; i < entrants; i++) {
+      const group = new T.Group();
+      this.podium.add(group);
+      mesh(group, disc, m.dark, { x: 0, y: .07, z: 0 }, {x:.43,y:.14,z:.43});
+      const rank = i + 3 < entrants ? this.sign(String(i + 4), '', '#ffebcc', '#293c49', group, {x:0,y:-.05,z:.51}, .46, .23) : undefined;
+      const retired = i ? this.fieldSeats[0].retired.clone() : this.sign('DNF', '', '#fff3dd', '#485460', group, {x:0,y:-.05,z:.51}, .55, .23);
+      if (i) group.add(retired);
+      const r = mesh(group, marbleSphere, this.marbleMats[0], { x: 0, y: .54, z: 0 }, { x: .40, y: .40, z: .40 });
       r.castShadow = true;
-      this.podiumRacers[i] = r;
+      group.visible = false;
+      this.fieldSeats.push({group, marble:r, rank, retired});
     }
     if (!this.plan.track) {
       d.add(post, m.gold, { x: 0, y: 2.17, z: -1.55 }, 0.1, 0.61, 0.1);
@@ -677,24 +692,25 @@ class CourseScene {
 
   update(race: RacePhysics, ranked: readonly Racer[], phase: Phase, phaseTime: number, dt: number, alpha: number, places: readonly Place[], countdownLeft: number) {
     this.visualTime += dt;
-    const postRace = phase === 'CELEBRATION' || phase === 'RESULTS';
+    const betweenRounds = places.length > 0 && (phase === 'NEXT_ROUND' || phase === 'PREPARE');
+    const postRace = phase === 'CELEBRATION' || phase === 'RESULTS' || betweenRounds;
     const queued = phase === 'PICK_MARBLE' || phase === 'COUNTDOWN' || phase === 'PREPARE' || phase === 'NEXT_ROUND';
     for (const [rank, r] of race.finishers.entries()) {
       if (!this.rollouts.has(r.id)) this.rollouts.set(r.id, { rank, start: this.visualTime });
     }
-    const finishHold = phase === 'CELEBRATION' && phaseTime < ROLLOUT_SECONDS + .12
+    const finishHold = phase === 'CELEBRATION' && race.finishers.length > 0 && phaseTime < ROLLOUT_SECONDS + .12
       && (phaseTime < .65 || this.rollouts.size !== this.parked.size);
-    const hasPodium = postRace && !finishHold && race.finishers.length > 0;
+    const hasPodium = postRace && !finishHold && places.length > 0;
     if (hasPodium !== this.showingPodium) this.camera.cut();
     this.showingPodium = hasPodium;
     this.podium.visible = hasPodium;
     this.route.visible = !hasPodium;
-    const cameraPhase = hasPodium ? phase : postRace ? race.finishers.length ? 'FINISHING' : 'PICK_MARBLE' : phase;
-    this.camera.update(this.plan, ranked, cameraPhase, dt, phaseTime, this.podiumAt, alpha);
+    const cameraPhase = betweenRounds ? 'RESULTS' : finishHold ? 'FINISHING' : phase;
+    this.camera.update(this.plan, ranked, cameraPhase, dt, phaseTime, this.podiumAt, alpha, race.elapsed);
     const interpolated = Math.max(0, race.elapsed - STEP * (1 - alpha));
     if (this.gridCrew) {
       this.gridCrew.group.visible = !hasPodium && (!race.released || (ranked[0]?.progress.distance ?? 0) < 26);
-      if (this.gridCrew.group.visible) this.gridCrew.pose(race.released ? interpolated : -countdownLeft);
+      if (this.gridCrew.group.visible) this.gridCrew.pose(race.released ? interpolated : -countdownLeft, this.visualTime, race.racers);
     }
     if (!hasPodium) this.scenery.frameCamera(this.camera.value, this.visualTime);
     if (this.startGate) this.startGate.position.y = this.plan.nodes[2].y + 0.45 - (race.released ? Math.min(1.3, race.elapsed * 3) : 0);
@@ -702,7 +718,8 @@ class CourseScene {
     for (const r of race.racers) {
       const group = this.meshes.get(r.id)!;
       const { marble, shadow, ring } = group;
-      marble.visible = shadow.visible = !r.dnf && !hasPodium;
+      const timedOut = postRace && (r.reason === 'Finishing window expired' || r.reason === 'Time limit');
+      marble.visible = shadow.visible = !hasPodium && (!r.dnf || timedOut);
       ring.visible = queued && marble.visible;
       if (!marble.visible) continue;
       const rollout = this.rollouts.get(r.id);
@@ -720,9 +737,11 @@ class CourseScene {
           if (seconds >= ROLLOUT_SECONDS) this.parked.add(r.id);
         }
       } else {
-        if (!race.released && this.gridCrew) this.gridCrew.ball(r.lane, marble.position);
-        else marble.position.copy(r.previous).lerp(r.p, alpha);
-        marble.quaternion.copy(r.previousQ).slerp(this.scratch.quaternion.copy(r.q), alpha);
+        if (!race.released && this.gridCrew) this.gridCrew.ball(r.lane, marble.position, marble.quaternion);
+        else {
+          marble.position.copy(r.previous).lerp(r.p, alpha);
+          marble.quaternion.copy(r.previousQ).slerp(this.scratch.quaternion.copy(r.q), alpha);
+        }
       }
       const support = queued ? this.grid : rollout ? undefined : r.ground;
       const receiver = support ?? race.floorBelow(marble.position, 3);
@@ -753,16 +772,37 @@ class CourseScene {
       }
       mesh.instanceMatrix.needsUpdate = true;
     }
+    if (hasPodium && places !== this.shownPlaces) {
+      this.shownPlaces = places;
+      this.lineup = podiumLayout(places);
+      this.fieldSeats.forEach((seat, i) => {
+        const place = this.lineup.field[i];
+        seat.group.visible = Boolean(place);
+        if (!place) return;
+        seat.group.position.set((i - (this.lineup.field.length - 1) / 2) * this.lineup.pitch, .36, 1.98);
+        seat.group.scale.setScalar(this.lineup.size);
+        seat.marble.material = this.marbleMats[place.id - 1];
+        // Keep each plate on the front face when a large field needs smaller seats.
+        const plateDepth = .52 / this.lineup.size;
+        const plateHeight = -.14 / this.lineup.size;
+        if (seat.rank) {
+          seat.rank.position.set(0, plateHeight, plateDepth);
+          seat.rank.visible = place.time !== null;
+        }
+        seat.retired.position.set(0, plateHeight, plateDepth);
+        seat.retired.visible = place.time === null;
+      });
+    }
     for (let i = 0; i < this.podiumRacers.length; i++) {
       const racer = this.podiumRacers[i];
-      const place = places[i];
-      racer.visible = Boolean(hasPodium && place && place.time !== null);
+      const place = this.lineup.medals[i];
+      racer.visible = Boolean(hasPodium && place);
       if (racer.visible) {
         racer.material = this.marbleMats[place.id - 1];
         racer.rotation.set(0.15 * Math.sin(this.visualTime), this.visualTime * 0.64 + i * 0.6, 0.10);
       }
     }
-    this.particles.visible = hasPodium && phase === 'CELEBRATION';
+    this.particles.visible = hasPodium && race.finishers.length > 0 && phase === 'CELEBRATION';
     if (this.particles.visible) {
       for (let i = 0; i < this.particles.count; i++) {
         const t = (phaseTime + i * 0.09) % 4.7;
@@ -817,7 +857,10 @@ class CourseScene {
 
   finishDisplay() {
     return { onTrack: this.route.visible ? [...this.rollouts.keys()] : [], parked: [...this.parked],
-      podium: this.podium.visible ? this.podiumRacers.filter(racer => racer.visible).length : 0 };
+      podium: this.podium.visible ? this.podiumRacers.filter(r => r.visible).length + this.fieldSeats.filter(s => s.group.visible).length : 0,
+      medalists: this.podium.visible ? this.lineup.medals.map(p => p.id) : [],
+      field: this.podium.visible ? this.lineup.field.map(p => p.id) : [],
+      retired: this.podium.visible ? this.lineup.field.filter(p => p.time === null).map(p => p.id) : [] };
   }
 
   get inPodiumShot() { return this.showingPodium; }
@@ -978,7 +1021,7 @@ export class ShowScene {
   }
 
   private resizeBuffer() {
-    const ratio = this.scale * Math.min(window.devicePixelRatio || 1, 1.25);
+    const ratio = this.scale * Math.min(window.devicePixelRatio || 1, 3840 / this.frameWidth, 2160 / this.frameHeight);
     const size = this.renderer.getSize(this.bufferSize);
     if (size.x !== this.frameWidth || size.y !== this.frameHeight || ratio !== this.renderer.getPixelRatio()) {
       this.renderer.setDrawingBufferSize(this.frameWidth, this.frameHeight, ratio);
@@ -999,6 +1042,7 @@ export class ShowScene {
   screen(p: V3) { return this.active?.screen(p) ?? { x: 0, y: 0, visible: false }; }
   racerScreen(id: number) { return this.active?.racerScreen(id); }
   finishDisplay() { return this.active?.finishDisplay(); }
+  cameraState() { return { wide: this.active?.camera.wide ?? 0 }; }
 
   resources() {
     const { memory, render } = this.renderer.info;

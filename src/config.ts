@@ -11,7 +11,7 @@ export const DEFAULTS = Object.freeze({
   pace: 'fixed', minPace: 90, maxPace: 140, celebration: 8, results: 5, generation: 'random',
   seed: 'zeerush', track: 'rotate', obstacles: 'standard', theme: 'rotate', quality: 'high',
   audio: 'balanced', soundtrack: 'library', announcer: true, master: 0.75, music: 0.65, effects: 0.8, mute: false, hud: 'full',
-  championship: true, controls: 'show', session: 'resume', mode: 'stream',
+  championship: true,
 } as const);
 
 export type Settings = {
@@ -21,7 +21,7 @@ export type Settings = {
   track: 'rotate' | 'classic' | TrackId; obstacles: ObstacleLevel; theme: Theme | 'rotate' | 'random';
   quality: 'low' | 'medium' | 'high'; audio: 'balanced' | 'asmr'; soundtrack: 'library' | 'synth';
   master: number; music: number; effects: number; announcer: boolean; mute: boolean; hud: 'full' | 'minimal' | 'off';
-  championship: boolean; controls: 'show' | 'hide'; session: 'fresh' | 'resume'; mode: 'stream' | 'operator';
+  championship: boolean;
 };
 
 const asObject = (value: unknown): Record<string, unknown> =>
@@ -65,8 +65,20 @@ export function settingsFrom(saved: unknown, search = ''): Settings {
     audio: choice('audio', ['balanced', 'asmr']), soundtrack: choice('soundtrack', ['library','synth']), master: number('master', 0, 1, false),
     music: number('music', 0, 1, false), effects: number('effects', 0, 1, false),
     announcer: bool('announcer'), mute: bool('mute'), hud: choice('hud', ['full', 'minimal', 'off']), championship: bool('championship'),
-    controls: choice('controls', ['show', 'hide']), session: choice('session', ['fresh', 'resume']), mode: choice('mode', ['stream', 'operator']),
   };
+}
+
+// Browser Source settings belong to the source URL. Championship history is stored separately.
+export function broadcastSettings(search: string) {
+  const params = new URLSearchParams(search), selected = new URLSearchParams();
+  for (const key of ['track', 'marbles', 'raceTarget', 'seed', 'quality', 'mute']) {
+    const value = params.get(key);
+    if (value !== null) selected.set(key, value);
+  }
+  return settingsFrom({
+    roster: selected.get('marbles') === 'random' ? 'random' : DEFAULTS.roster,
+    pace: selected.get('raceTarget') === 'random' ? 'random' : DEFAULTS.pace,
+  }, selected.toString());
 }
 
 export function raceSettings(settings: Settings, sessionId: string, round: number): Settings {

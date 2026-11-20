@@ -12,14 +12,14 @@ export const MECHANISMS = [
   'funnel', 'paddle', 'gates', 'tilt', 'conveyor', 'jump', 'chime',
 ] as const;
 export type Mechanism = typeof MECHANISMS[number] | 'start' | 'finish' | 'signature' | 'brake' | 'cushions' | 'sweepers' | 'terraces' | 'chute';
-export type Sample = V3 & { yaw: number; half: number; bank: number; s: number; t: number; module: number; pitch?: number };
+export type Sample = V3 & { yaw: number; half: number; bank: number; s: number; t: number; module: number; pitch?: number; shoulder?: number };
 export type ColliderGeometry = { points: number[]; triangles: number[] };
 type Descent = { start: number; span: number; downhill: number; uphill: number };
 type NarrowPass = { entry: number; first: number; last: number; exit: number; width: number };
 export type Device = {
   kind: 'bumper' | 'peg' | 'divider' | 'paddle' | 'gate' | 'tilt' | 'belt' | 'chime' | 'scoop' | 'platter' | 'cushion' | 'sweeper' | 'roller' | 'fin' | 'swing';
-  p: V3; yaw: number; size: V3; phase: number; surface: Surface; s: number; grade: number;
-  sweep?: { amplitude: number; bank: number };
+  p: V3; yaw: number; size: V3; phase: number; surface: Surface; s: number; grade: number; crossSlope?: number;
+  sweep?: { amplitude: number; station: Sample; across: number };
 };
 export type Module = {
   kind: Mechanism; name: string; surface: Surface; from: number; to: number;
@@ -39,6 +39,7 @@ export type Plan = {
 
 export const HALF = 3.62;
 const TAU = Math.PI * 2;
+const bankLength = 4.8 ** 2 / 9.81; // Design rolling speed squared divided by gravity, in course units.
 const metadata: Record<Mechanism, { name: string; len: number; surface: Surface }> = {
   start: { name: 'Starting grid', len: 24, surface: 'wood' },
   bank: { name: 'Banked sweep', len: 31, surface: 'wood' },
@@ -74,6 +75,37 @@ export function point(n: Sample, u: number, height = 0): V3 {
   return { x: n.x + Math.cos(n.yaw) * u, y: n.y + n.bank * u + height, z: n.z - Math.sin(n.yaw) * u };
 }
 
+const smooth = (t: number) => clamp(t, 0, 1) ** 2 * (3 - 2 * clamp(t, 0, 1));
+
+// A level middle gives the field room to pass. The shoulders vanish in two-wide passages.
+function shoulderRise(half: number, across: number) {
+  const shoulder = half * .4;
+  const run = clamp(Math.abs(across) - (half - shoulder), 0, shoulder);
+  return .24 * run * run / shoulder * smooth((half - 1) / .9);
+}
+
+function deckShoulder(n: Sample, across: number) {
+  return shoulderRise(n.half, across) * (n.shoulder ?? 1);
+}
+
+function easeBanks(nodes: Sample[], from: number, to: number) {
+  // Limit the change in cross-slope per meter in both directions. A quick left-right
+  // must not lift an edge so fast that it becomes an uphill pocket.
+  const limit = (n: Sample, neighbor: Sample) => {
+    const sign = Math.sign(n.bank);
+    const step = .032 * Math.abs(n.s - neighbor.s);
+    const available = sign * neighbor.bank;
+    n.bank = sign * Math.min(Math.abs(n.bank), available < 0 ? step / 2 : available + step);
+  };
+  for (let i = from + 1; i < to; i++) limit(nodes[i], nodes[i - 1]);
+  for (let i = to - 1; i > from; i--) limit(nodes[i], nodes[i + 1]);
+}
+
+export function landmarkOrigin(plan: Plan, courseModule: Module) {
+  const middle = plan.nodes[courseModule.from + Math.round((courseModule.to - courseModule.from) / 2)];
+  return point(middle, courseModule.lean * (middle.half + 5.48), -.72);
+}
+
 // Chute stations run along the deck. Their clearance and checkpoint planes rotate with it.
 export function stationAlong(n: Sample, p: V3) {
   const forward = along(n, p);
@@ -82,13 +114,14 @@ export function stationAlong(n: Sample, p: V3) {
 
 export function chuteClearance(n: Sample, p: V3) {
   const pitch = n.pitch ?? 0;
-  return Math.cos(pitch) * (p.y - n.y) + Math.sin(pitch) * along(n, p);
+  return Math.cos(pitch) * (p.y - n.y) + Math.sin(pitch) * along(n, p) - deckShoulder(n, side(n, p));
 }
 
 export function chutePoint(n: Sample, across: number, height: number) {
   const pitch = n.pitch ?? 0;
-  const p = point(n, across, height * Math.cos(pitch));
-  const forward = height * Math.sin(pitch);
+  const normalOffset = height + deckShoulder(n, across);
+  const p = point(n, across, normalOffset * Math.cos(pitch));
+  const forward = normalOffset * Math.sin(pitch);
   p.x += forward * Math.sin(n.yaw);
   p.z += forward * Math.cos(n.yaw);
   return p;
@@ -108,7 +141,7 @@ export function gridSurface(plan: Plan) {
 
 export function tunnelPoint(n: Sample, j: number) {
   const theta = Math.PI * j / 12;
-  return point(n, Math.cos(theta) * n.half, 0.94 + 1.51 * Math.sin(theta));
+  return point(n, Math.cos(theta) * n.half, 0.94 + deckShoulder(n, n.half) + 1.51 * Math.sin(theta));
 }
 
 function profile(kind: Mechanism, t: number, sign: number, curve: number) {
@@ -119,12 +152,12 @@ function profile(kind: Mechanism, t: number, sign: number, curve: number) {
   if (kind === 'bowl') yaw = sign * 2.85 * (t - 0.1 * Math.sin(TAU * t));
   if (kind === 'bank') yaw = sign * 1.42 * (t - 0.16 * Math.sin(TAU * t));
   if (kind === 'slalom') yaw = sign * 0.38 * Math.sin(TAU * t) * f;
-  const bank = kind === 'bank' || kind === 'helix' || kind === 'bowl' ? sign * 0.15 * f : kind === 'slalom' ? 0.13 * Math.sin(TAU * t) * f : 0;
   const elevate = kind === 'waves' ? 0.27 * Math.sin(3 * TAU * t) * f : kind === 'jump' ? 0.10 * Math.sin(TAU * t) * f : 0;
-  return { yaw, half: HALF + f * width, bank, elevate };
+  return { yaw, half: HALF + f * width, elevate };
 }
 
 function floorPoint(n: Sample, u: number, kind: Mechanism, feed = false) {
+  if (kind === 'chute') return chutePoint(n, u, 0);
   let shape = 0;
   if (kind === 'bowl') shape = 0.048 * u * u * surfaceT(n.t);
   if (kind === 'split') shape = 0.10 * Math.sin(n.t * TAU) * surfaceT(n.t) * u / n.half;
@@ -134,10 +167,16 @@ function floorPoint(n: Sample, u: number, kind: Mechanism, feed = false) {
     const lip = (Math.abs(u) / n.half) ** 3;
     shape += (kind === 'terraces' ? .47 : .17) * lip * surfaceT(n.t);
   }
-  return point(n, u, shape);
+  // The carved bowl and fork approach already have curved lips through their middles.
+  const shoulder = deckShoulder(n, u) * (feed || kind === 'bowl' ? 1 - surfaceT(n.t) : 1);
+  return point(n, u, shape + shoulder);
 }
 
 export const deckPoint = (n: Sample, m: Module, u: number) => floorPoint(n, u, m.kind, m.feed);
+
+export function sweeperDeck(sweep: NonNullable<Device['sweep']>, travel: number) {
+  return floorPoint(sweep.station, sweep.across + travel, 'sweepers');
+}
 
 function addQuad(mesh: ColliderGeometry, a: V3, b: V3, c: V3, d: V3) {
   const i = mesh.points.length / 3;
@@ -145,7 +184,6 @@ function addQuad(mesh: ColliderGeometry, a: V3, b: V3, c: V3, d: V3) {
   mesh.triangles.push(i, i + 1, i + 2, i, i + 2, i + 3);
 }
 
-const smooth = (t: number) => clamp(t, 0, 1) ** 2 * (3 - 2 * clamp(t, 0, 1));
 const opening = (t: number) => smooth((t - 0.09) / 0.20) * smooth((0.92 - t) / 0.21);
 const drumSteps = [0.33, 0.48, 0.63];
 
@@ -216,17 +254,16 @@ function spiralProgress(t: number) {
 function challengeProfile(kind: Mechanism, t: number, sign: number) {
   const blend = surfaceT(t);
   if (kind === 'terraces') return {
-    yaw: sign * TAU * spiralProgress(t), half: HALF - .22 * blend, bank: -sign * .215 * blend,
+    yaw: sign * TAU * spiralProgress(t), half: HALF - .22 * blend,
     elevate: -.63 * smooth((t - .12) / .095) - .67 * smooth((t - .77) / .11),
   };
   const chicane = kind !== 'brake';
   const zigzag = Math.sin(2 * TAU * t);
   const yaw = sign * (chicane ? (zigzag * .39 + Math.sin(TAU * t) * .18) * blend : .36 * smooth(t));
-  const bank = sign * (chicane ? .09 * zigzag * blend : -.058 * blend);
   const taper = kind === 'sweepers'
     ? Math.max(1 - smooth(Math.abs(t - .13) / .13), 1 - smooth(Math.abs(t - .87) / .13)) : 0;
   const half = HALF + (chicane ? .68 : .18) * blend - 1.06 * taper;
-  return { yaw, bank, half, elevate: 0 };
+  return { yaw, half, elevate: 0 };
 }
 
 export function branchFrame(n: Sample, m: Module, lane: number) {
@@ -275,15 +312,17 @@ export function branchFrame(n: Sample, m: Module, lane: number) {
       if (!inner) center += lane * .46 * spread;
       break;
   }
-  return { center, height, width, camber, crown };
+  return { center, height, width, camber, crown, open };
 }
 
-const branchHeight = (f: ReturnType<typeof branchFrame>, lane: number, span: number) =>
-  f.height + f.camber * span ** 2 + f.crown * Math.max(0, -lane * span) ** 2;
+const branchHeight = (n: Sample, f: ReturnType<typeof branchFrame>, lane: number, span: number) =>
+  f.height + f.camber * span ** 2 + f.crown * Math.max(0, -lane * span) ** 2
+  + (1 - f.open) * deckShoulder(n, f.center + f.width * span)
+  + f.open * shoulderRise(f.width, span * f.width);
 
 export function branchPoint(n: Sample, m: Module, lane: number, span = 0, offset = 0) {
   const f = branchFrame(n, m, lane);
-  return point(n, f.center + span * f.width, branchHeight(f, lane, span) + offset);
+  return point(n, f.center + span * f.width, branchHeight(n, f, lane, span) + offset);
 }
 
 export function branchContact(n: Sample, m: Module, u: number, y: number, tolerance: number) {
@@ -291,7 +330,7 @@ export function branchContact(n: Sample, m: Module, u: number, y: number, tolera
   for (const lane of [-1, 1]) {
     const f = branchFrame(n, m, lane);
     const span = clamp((u - f.center) / f.width, -1, 1);
-    const dy = y - (point(n, u).y + branchHeight(f, lane, span));
+    const dy = y - (point(n, u).y + branchHeight(n, f, lane, span));
     const excess = Math.abs(u - f.center) - f.width;
     if (excess <= tolerance && (!nearest || Math.abs(dy) < Math.abs(nearest.dy))) nearest = { lane, dy, excess };
   }
@@ -320,9 +359,9 @@ function signatureGeometry(nodes: Sample[], m: Module, rng: Random, grade: numbe
       if (inner && track === 'aurora' && [0.33, 0.50, 0.67].some(x => Math.abs(t - x) < .053)) surface = 'snow';
       if (inner && track === 'bellflower' && t >= .57 && t <= .76) surface = 'clay';
       if (inner && track === 'cloud-quilt' && !drumSteps.some(x => Math.abs(t - x) < .032)) surface = 'felt';
-      for (let k = -2; k < 2; k++) {
-        const corners = [branchPoint(a, m, lane, k / 2), branchPoint(b, m, lane, k / 2),
-          branchPoint(b, m, lane, (k + 1) / 2), branchPoint(a, m, lane, (k + 1) / 2)] as const;
+      for (let k = -4; k < 4; k++) {
+        const corners = [branchPoint(a, m, lane, k / 4), branchPoint(b, m, lane, k / 4),
+          branchPoint(b, m, lane, (k + 1) / 4), branchPoint(a, m, lane, (k + 1) / 4)] as const;
         addQuad(m.floor, ...corners);
         addQuad(band(surface), ...corners);
       }
@@ -381,17 +420,17 @@ function geometry(nodes: Sample[], m: Module, obstacles: ObstacleLevel) {
     const u = drop ? (t - drop.start) / drop.span : -1;
     const polished = u >= .16 && u < .60;
     const gripSide = m.lean * (dropIndex % 2 ? -1 : 1);
-    for (let lane = 0; lane < 4; lane++) {
+    for (let lane = -4; lane < 4; lane++) {
       if (m.gap && i > m.from && a.t >= m.gap[0] - 1e-8 && b.t <= m.gap[1] + 1e-8) continue;
-      const left = lane / 2 - 1;
-      const right = (lane + 1) / 2 - 1;
+      const left = lane / 4;
+      const right = (lane + 1) / 4;
       const corners = [deckPoint(a, m, left * a.half), deckPoint(b, m, left * b.half),
         deckPoint(b, m, right * b.half), deckPoint(a, m, right * a.half)] as const;
       addQuad(m.floor, ...corners);
       if (m.dropDegrees) {
         addQuad(t < .10 || t > .94 ? bypass : t < .62 ? slides : grip, ...corners);
       } else if (m.descents) {
-        const side = lane < 2 ? -1 : 1;
+        const side = lane < 0 ? -1 : 1;
         const recoveryStrip = u >= .68 && u < .93 && side === gripSide;
         const entryStrip = (dropIndex === 0 || obstacles === 'extra') && u >= .045 && u < .15 && side !== gripSide;
         addQuad(polished ? slides : recoveryStrip || entryStrip ? grip : bypass, ...corners);
@@ -432,7 +471,7 @@ function populateChallenge(nodes: Sample[], module: Module, rng: Random, extra: 
     const amplitude = Math.min(extra ? 1.35 : 1.15, edge - Math.abs(x));
     module.devices.push({ kind: moving ? 'sweeper' : 'cushion', p: deckPoint(n, module, x), yaw: n.yaw,
       size: { x: 2 * radius, y: 2 * radius, z: 2 * radius }, phase: rng.float(0, TAU), surface: 'rubber', s: n.s, grade: 0,
-      sweep: moving ? { amplitude, bank: n.bank } : undefined,
+      sweep: moving ? { amplitude, station: n, across: x } : undefined,
     });
     module.devices[module.devices.length - 1].p.y -= radius * .56;
   }
@@ -465,9 +504,16 @@ function addHurdles(nodes: Sample[], modules: Module[], seed: string, extra: boo
         const p = deckPoint(n, m, u);
         const size = kind === 'roller' ? { x: 2.12, y: .36, z: .36 } :
           kind === 'fin' ? { x: .22, y: .43, z: 1.50 } : { x: .32, y: .43, z: 1.68 };
+        const span = kind === 'roller' ? size.x - size.y : .7;
+        const left = deckPoint(n, m, u - span / 2), right = deckPoint(n, m, u + span / 2);
+        const crossSlope = (right.y - left.y) / span;
+        const ahead = deckPoint(next, m, u), forwardSlope = (p.y - ahead.y) / along(n, ahead);
+        const skew = kind === 'fin' ? hand * .38 : 0;
+        const grade = Math.atan(forwardSlope * Math.cos(skew) - crossSlope * Math.sin(skew));
+        if (kind === 'roller') p.y = (left.y + right.y) / 2;
         p.y += kind === 'roller' ? -.065 : size.y * .46;
-        m.devices.push({ kind, p, size, yaw: n.yaw + (kind === 'fin' ? hand * .38 : 0),
-          grade: Math.atan2(n.y - next.y, next.s - n.s), s: n.s, surface: kind === 'swing' ? 'rubber' : 'wood',
+        m.devices.push({ kind, p, size, yaw: n.yaw + skew,
+          grade, crossSlope, s: n.s, surface: kind === 'swing' ? 'rubber' : 'wood',
           phase: rng.float(0, TAU) });
       }
     }
@@ -592,21 +638,20 @@ export function makePlan(seed: string, theme: Theme, target: number, fallback = 
         const at = from + f * steps;
         const exit = smooth((at - bridge.last) / (m.to - bridge.last));
         const narrow = smooth((at - from) / (bridge.first - from)) * (1 - exit);
-        return { yaw: sign * .72 * exit, half: HALF - (HALF - bridge.width / 2) * narrow,
-          bank: -sign * .12 * surfaceT(exit), elevate: 0 };
+        return { yaw: sign * .72 * exit, half: HALF - (HALF - bridge.width / 2) * narrow, elevate: 0 };
       }
       if (sig) return {
         yaw: sign * sig.turn * smooth((f - .05) / .90),
         half: f === 1 ? HALF : HALF + (sig.width - HALF) * surfaceT(f),
-        bank: -.126 * sign * surfaceT(f), elevate: 0,
+        elevate: 0,
       };
       if (challengeModule) return challengeProfile(kind, f, sign);
       if (spec && kind === 'bank') return {
-        yaw: sign * .96 * smooth(f), half: HALF, bank: -.10 * sign * surfaceT(f), elevate: 0,
+        yaw: sign * .96 * smooth(f), half: HALF, elevate: 0,
       };
       return profile(kind, f, sign, feed ? 0 : spec ? curve * .53 : curve);
     };
-    if (idx === 0) nodes.push({ x, y, z, yaw, s, t: 0, half: HALF, bank: 0, module: idx });
+    if (idx === 0) nodes.push({ x, y, z, yaw, s, t: 0, half: HALF, bank: 0, module: idx, shoulder: 0 });
     for (let j = 1; j <= steps; j++) {
       const t = j / steps;
       const p = bend(t);
@@ -626,8 +671,14 @@ export function makePlan(seed: string, theme: Theme, target: number, fallback = 
       const elevation = m.descents ? m.descents.reduce((sum, drop) => sum + descentOffset(t, drop, length, slope), 0) : p.elevate;
       y = startY - slope * length * t + elevation - terraces
         - (m.gap && t >= m.gap[1] - 1e-8 ? drop : 0);
-      nodes.push({ x, y, z, yaw, s, t, half, bank: p.bank, module: idx });
+      // The outer rail rises with signed curvature. Ease the bank out at flat joins and two-wide throats.
+      const curvature = 2 * (p.yaw - mid.yaw) / ds;
+      const bank = clamp(-bankLength * curvature, -.36, .36)
+        * smooth(t / .12) * smooth((1 - t) / .12) * smooth((half - 1) / .9);
+      const shoulder = kind === 'start' ? smooth((t - .13) / .38) : kind === 'finish' ? 1 - smooth((t - .06) / .62) : undefined;
+      nodes.push({ x, y, z, yaw, s, t, half, bank, module: idx, shoulder });
     }
+    easeBanks(nodes, from, m.to);
     if (sig) signatureGeometry(nodes, m, rng, slope);
     else {
       geometry(nodes, m, obstacles);

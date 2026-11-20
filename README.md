@@ -39,28 +39,26 @@ python -m http.server 4287 --bind 127.0.0.1 --directory dist
 
 On Windows, `py` can replace `python` when the launcher detects an installed Python interpreter.
 
-## Operator controls
+## Broadcast URL options
 
-Open **Settings** in the show header or press **O**. Press **Escape** to close the panel. Sound starts by default where the browser permits autoplay. If the browser asks for a gesture, select **Enable sound** or press **A**. Use the browser source’s interaction window when streaming. For a clean feed, hide the Settings button in **Presentation** and reopen the panel with **O**.
+The plain show URL runs unattended with six marbles, sound on and native-resolution High quality. Set any of these six options in the browser source URL and reload it to start the next grid with that setup.
 
-| Section | Controls |
-| --- | --- |
-| Race generation | Automatic random or a repeatable seed, shuffled signature rotation or a specific course, obstacle density, theme and music, roster and entrant count, fixed or random pacing |
-| Roster | Six entrants by default, fixed or random identities, and a fixed count or a configurable random range from 4–8 |
-| Show timing | Selection, countdown, post-finish grace, celebration, results, and championship scoring |
-| Presentation and audio | Render quality, HUD detail, settings button, starting grid announcer, mix, volume and mute |
+| URL option | Values | Default |
+| --- | --- | --- |
+| `track` | `rotate`, `classic`, or a [signature course ID](docs/signature-tracks.md) | `rotate` shuffles the ten signature courses |
+| `marbles` | An integer from 4 to 8, or `random` to draw a new roster and count each round | `6` |
+| `raceTarget` | Approximate winner time in seconds from 60 to 180, or `random` for a new 90–140 second target each round | `120` |
+| `seed` | Text for a repeatable sequence of layouts, lane draws and throws | The session gets a random seed and each round gets a new layout |
+| `quality` | `high` for native pixels up to 3840 × 2160, `medium` for adaptive resolution, or `low` for a lighter render | `high` |
+| `mute` | `1` for silence or `0` for music, the announcer and race sounds | `0` |
 
-Each entrant has its own cartoon animal at the starting line. The animal wears the marble’s color and holds its numbered marble while the announcer invites viewers to pick a winner. All the animals throw together on “Go!” Each marble leaves its paw at a different angle and speed, then lands on the track and rolls into the race. A race seed reproduces the cast and throws.
+For example, run [Cedar Creek with eight marbles in High quality](http://127.0.0.1:4287/?track=cedar-creek&marbles=8&quality=high) or [rotate courses with a random roster and pace](http://127.0.0.1:4287/?marbles=random&raceTarget=random). Championship points and the round number persist across reloads.
 
-Short selection windows use just the opening question. The voice plays through the show’s effects channel and briefly lowers the background music. To run a voice-free broadcast, turn off **Starting grid announcer** under **Audio**. The bundled recording was rendered with [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M).
+At the grid, each cartoon animal holds its own numbered marble as the announcer invites viewers to pick a winner. All the animals release together on “Go!” Their wind-ups determine each marble’s launch angle, speed and spin. Each animal reacts to its own marble’s first landing. Music lowers under the invitation. [Announcer voice model](https://huggingface.co/hexgrad/Kokoro-82M)
 
-Automatic random generation creates a new course layout and lane draw each race. The session retains its randomized sequence and points between visits. In **Repeatable seed**, the same seed, settings and race number reproduce the preflight inputs. The pacing target is approximate, with a configurable range of 60–180 seconds. Generation, timing and HUD changes take effect at the next grid. Audio mix, render quality, and Settings button visibility take effect immediately. The championship setting applies at the next scoring commit.
+The camera follows close battles and steep drops, then pulls back to show chasing marbles and track landmarks. After the first arrival it can follow the remaining field and return for the next crossing. Finishers roll into individual bays. The ceremony and results show every entrant, with the first three finishers on the podium and a front row for the rest. The official standings use the crossing times. A marble that misses the finishing window appears as DNF.
 
-The plain show URL is enough for normal operation. Shared preview links can still load a particular setup for replay and diagnostics. Applying the panel settings saves them in the browser and clears those overrides from the current URL. Use the [plain show URL](http://127.0.0.1:4287/) as your capture source.
-
-The opening shot shows each cartoon host holding a marble and follows the field as they throw. During the race the camera moves closer to a lone leader and pulls back for nearby rivals. It follows the leaders to the checkered stripe, then holds their numbered finish bays as they roll in. All finishers appear on the podium through results. The official clock and standings use the finish-line crossing.
-
-On every signature course and Procedural Classic, **Standard** has three passages wide enough for two marbles side by side. **Extra** has four. Both levels have five descents with uphill exits. Three taper into narrower runs or alternate grip strips before reopening for overtakes. The other two are wide, covered chutes. The first reaches 55–65° on Standard or 66–74° on Extra. The second reaches 80°. Both have a rounded catch and a lined uphill exit that sheds speed before the next turn. Both levels include a round roller, angled fins and a padded swinging gate. Extra pairs hurdles with a recovery straight between stations. The signature courses also have moving sweepers and a banked spiral. **Original layout** selects the earlier track recipe. Reserve courses use the selected obstacle level.
+On every signature course and Procedural Classic, **Standard** has three passages wide enough for two marbles side by side. **Extra** has four. Both levels have five descents with uphill exits. Three taper into narrower runs or alternate grip strips before reopening for overtakes. The other two are wide, covered chutes. The first reaches 55–65° on Standard or 66–74° on Extra. The second reaches 80°. Both have a rounded catch and a lined uphill exit that sheds speed before the next turn. Both levels include a round roller, angled fins and a padded swinging gate. Extra pairs hurdles with a recovery straight between stations. The signature courses also have moving sweepers and a banked spiral. The broadcast uses Standard obstacles.
 
 ## Development and verification
 

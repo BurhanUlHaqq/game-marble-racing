@@ -4,10 +4,10 @@ import { Vector3 } from 'three';
 import { ShowCamera } from '../src/camera';
 import { settingsFrom } from '../src/config';
 import { bayOffset, finishPoint, finishRack } from '../src/finish-runout';
-import { heldMarble, HOLD_ANGLE } from '../src/grid-launch';
+import { heldMarble, neutralThrow } from '../src/grid-launch';
 import { RADIUS, rosterFor } from '../src/identities';
 import { CAP, initPhysics, RacePhysics, STEP } from '../src/physics';
-import { planFor } from '../src/track';
+import { pathPoseAt, planFor } from '../src/track';
 import type { V3 } from '../src/track';
 
 before(initPhysics);
@@ -32,7 +32,7 @@ test('the full cast, finish bays and podium fit beside the broadcast graphics', 
       camera.update(plan, race.racers, 'PICK_MARBLE', 0, 1, podium);
       camera.value.updateMatrixWorld();
       for (const racer of race.racers) {
-        const b = bounds(camera, heldMarble(racer.launch, HOLD_ANGLE, new Vector3()));
+        const b = bounds(camera, heldMarble(racer.launch, neutralThrow(), new Vector3()));
         assert.ok(b.left > 254 && b.right < 624 && b.top > 30 && b.bottom < 295 && b.diameter > 23,
           'Held marble must fit beside the pick prompt: ' + JSON.stringify(b));
       }
@@ -57,6 +57,34 @@ test('the full cast, finish bays and podium fit beside the broadcast graphics', 
       }
     } finally { race.dispose(); }
   }
+});
+
+test('the wide shot brings the trailing pack into frame, then returns to a close lead shot', () => {
+  const settings = settingsFrom({track: 'cedar-creek', marbles: 8, seed: 'camera-review'});
+  const plan = planFor(settings, 1), race = new RacePhysics(plan, rosterFor(settings, 1));
+  const camera = new ShowCamera(), podium = new Vector3();
+  try {
+    camera.course(plan);
+    const field = race.racers;
+    for (const [i, racer] of field.entries()) {
+      const distance = 21 - 2.35 * i;
+      const pos = pathPoseAt(plan, distance, {x: 0, y: 0, z: 0, yaw: 0});
+      racer.progress.distance = distance;
+      Object.assign(racer.p, {x: pos.x, y: pos.y + RADIUS, z: pos.z});
+      Object.assign(racer.previous, racer.p);
+    }
+    const frame = (time: number) => {
+      for (let i = 0; i < 180; i++) camera.update(plan, field, 'RACING', STEP, time, podium);
+      camera.value.updateMatrixWorld();
+      const silhouettes = field.map(racer => bounds(camera, racer.p));
+      return { amount: camera.wide, size: silhouettes[0].diameter,
+        visible: silhouettes.filter(b => b.left > 16 && b.right < 490 && b.top > 32 && b.bottom < 334).length };
+    };
+    const close = frame(17), wide = frame(8), back = frame(17);
+    assert.ok(wide.amount > .95 && back.amount < .05);
+    assert.equal(wide.visible, field.length);
+    assert.ok(wide.visible > close.visible && back.size > wide.size * 1.25);
+  } finally { race.dispose(); }
 });
 
 test('a full race keeps a close challenge on camera through the chutes and the finish', () => {

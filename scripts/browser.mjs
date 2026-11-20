@@ -16,17 +16,14 @@ if (!exe) throw new Error('Set ZEERUSH_CHROME to a Chromium executable.');
 const output = `verification-output/browser-${process.env.ZEERUSH_REPORT_TAG ?? mode}`;
 await mkdir(output, { recursive: true });
 const target = new URL(url);
-target.searchParams.set('session', 'fresh');
 target.searchParams.set('diagnostics', '1');
 if (mode === 'audio') {
-  target.searchParams.set('mode', 'operator');
-  target.searchParams.set('pick', '5');
-  target.searchParams.set('countdown', '3');
+  target.searchParams.set('marbles', '8');
   target.searchParams.set('raceTarget', '60');
 }
 const browser = await chromium.launch({
   executablePath: exe, headless: true,
-  args: ['--enable-unsafe-swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
+  args: ['--autoplay-policy=no-user-gesture-required', '--enable-unsafe-swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
 });
 const viewport = process.env.ZEERUSH_VIEWPORT === '4k' ? { width: 3840, height: 2160 } : { width: 1920, height: 1080 };
 const page = await browser.newPage({ viewport });
@@ -58,10 +55,9 @@ let first, last, graphics, stopped, launchError;
 const start = Date.now();
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 let previous;
-let selectedAudio = 'balanced';
 let resizeTest;
 let restored;
-let rosterChange;
+let controlCount;
 try {
   await page.goto(target.href, { waitUntil: 'domcontentloaded', timeout: 60000 });
   if (await page.locator('#show[data-phase=prepare]').isVisible()) {
@@ -77,8 +73,8 @@ try {
     return { renderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER), agent: navigator.userAgent };
   });
   if (mode === 'audio') {
-    await page.getByRole('button', { name: 'Enable audio', exact: true }).click();
-    await page.keyboard.press('Escape');
+    await page.keyboard.press('o');
+    controlCount = await page.locator('button,input,select,form,dialog').count();
     await page.setViewportSize({ width: 3840, height: 2160 });
     await pause(500);
     resizeTest = await page.evaluate(() => {
@@ -101,18 +97,7 @@ try {
     }
     if (mode === 'audio') {
       const time = (Date.now() - start) / 1000;
-      if (selectedAudio === 'balanced' && time > 29) {
-        const before = last.racers.length;
-        await page.keyboard.press('o');
-        await page.locator('select[name=audio]').selectOption('asmr');
-        await page.locator('input[name=marbles]').fill('8');
-        await page.getByRole('button', { name: 'Apply settings', exact: true }).click();
-        await page.keyboard.press('Escape');
-        rosterChange = { before, inFlight: await page.evaluate(() => window.__zeerush().racers.length) };
-        selectedAudio = 'asmr';
-      }
-      if (rosterChange && last.round === 2) rosterChange.nextGrid = last.racers.length;
-      audioSamples.push({ t: time, preset: selectedAudio, phase: last.phase, ...await page.evaluate(() => globalThis.zeerushAnalysis?.()) });
+      audioSamples.push({ t: time, phase: last.phase, ...await page.evaluate(() => globalThis.zeerushAnalysis?.()) });
     }
     if (mode === 'restore' && !restored && last.phase === 'RACING') {
       await page.evaluate(() => {
@@ -156,20 +141,24 @@ try {
 } finally {
   const version = browser.version();
   await browser.close();
+  // Chromium cancels successful media range reads when the next cue replaces a stream.
+  const cancelledMediaReads = failed.filter(r => r.reason === 'net::ERR_ABORTED' && resources.get(r.url) === 206
+    && new URL(r.url).origin === target.origin && new URL(r.url).pathname.endsWith('.ogg'));
+  const requestErrors = failed.filter(r => !cancelledMediaReads.includes(r));
   const report = {
     url: target.href, seconds: ((stopped ?? Date.now()) - start) / 1000,
     environment: { os: platform(), release: release(), node: process.version, version, ...graphics }, viewport,
-    launchError, first, last, timeline, errors, consoleMessages, requestsFailed: failed, requests: [...resources],
-    screenshots: [...shots], resizeTest, rosterChange, audioSamples,
+    launchError, first, last, timeline, errors, consoleMessages, requestsFailed: requestErrors, cancelledMediaReads, requests: [...resources],
+    screenshots: [...shots], resizeTest, controlCount, audioSamples,
   };
   await writeFile(`${output}/report.json`, JSON.stringify(report, null, 2));
   console.log(`Saved ${output}/report.json`);
-  if (launchError || errors.length || failed.length || [...resources].some(([url, status]) => new URL(url).origin !== target.origin || status >= 400)) {
+  if (launchError || errors.length || requestErrors.length || [...resources].some(([url, status]) => new URL(url).origin !== target.origin || status >= 400)) {
     process.exitCode = 1;
   }
   if (mode === 'clean' && seconds >= 1200 && last?.completed < 4) process.exitCode = 1;
   if (mode === 'restore' && (last?.contextLosses !== 1 || last?.contextRestores !== 1 || last.elapsed < 2)) process.exitCode = 1;
-  if (mode === 'audio' && (resizeTest?.width !== 3840 || resizeTest.height !== 2160 || rosterChange?.inFlight !== 6 || rosterChange.nextGrid !== 8
-    || !audioSamples.some(s => s.rms > 0.003 && s.preset === 'balanced')
-    || !audioSamples.some(s => s.rms > 0.003 && s.preset === 'asmr') || audioSamples.some(s => s.peak > 1))) process.exitCode = 1;
+  if (mode === 'audio' && (resizeTest?.renderWidth !== 3840 || resizeTest.renderHeight !== 2160 || controlCount !== 0
+    || first?.racers.length !== 8 || last?.racers.length !== 8 || last.resources.musicFailures !== 0 || !audioSamples.some(s => s.rms > .003)
+    || audioSamples.some(s => s.peak > 1))) process.exitCode = 1;
 }

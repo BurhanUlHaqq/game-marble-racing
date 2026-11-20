@@ -22,7 +22,7 @@ try {
       cb(stamp + offset);
     });
   });
-  await page.goto('http://127.0.0.1:4287/?seed=postmark-26&track=' + track + '&marbles=' + entrants + '&raceTarget=60&pick=3&countdown=3&session=fresh&diagnostics=1');
+  await page.goto('http://127.0.0.1:4287/?seed=postmark-26&track=' + track + '&marbles=' + entrants + '&raceTarget=60&diagnostics=1');
   await page.waitForFunction(stage => {
     const state = window.__zeerush?.();
     if (stage === 'grid-hold' || stage === 'grid-toss') {

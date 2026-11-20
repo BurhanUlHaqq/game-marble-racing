@@ -1,5 +1,5 @@
 import type { Settings } from './config';
-import { settingsFrom } from './config';
+import { broadcastSettings } from './config';
 import { IDENTITIES } from './identities';
 import type { Place } from './physics';
 
@@ -34,10 +34,10 @@ export function freshSession(settings: Settings, id = `${Date.now().toString(36)
 }
 
 export function loadSession(storage: StorageLike | undefined, query = ''): Session {
+  const settings = broadcastSettings(query);
   try {
     const raw = object(JSON.parse(storage?.getItem(KEY) ?? 'null'));
-    const settings = settingsFrom(raw.settings, query);
-    if (raw.version !== 1 || settings.session === 'fresh' || typeof raw.id !== 'string' || !raw.id) return freshSession(settings);
+    if (raw.version !== 1 || typeof raw.id !== 'string' || !raw.id) return freshSession(settings);
     const next = Math.max(1, int(raw.next, 1));
     const pending = int(raw.pending);
     const interrupted = pending === next;
@@ -54,14 +54,14 @@ export function loadSession(storage: StorageLike | undefined, query = ''): Sessi
       championship: Math.max(1, int(raw.championship, 1)), cupRound: Math.min(4, int(raw.cupRound)), cup: safeStats(raw.cup),
     };
   } catch {
-    return freshSession(settingsFrom(undefined, query));
+    return freshSession(settings);
   }
 }
 
 export function saveSession(storage: StorageLike | undefined, session: Session) {
   if (!storage) return false;
   try {
-    storage.setItem(KEY, JSON.stringify({ ...session, settings: { ...session.settings, session: 'resume', mode: 'stream' } }));
+    storage.setItem(KEY, JSON.stringify({ ...session, settings: undefined }));
     return true;
   } catch { return false; }
 }

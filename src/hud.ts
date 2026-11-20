@@ -1,4 +1,3 @@
-import { THEMES } from './config';
 import type { Settings } from './config';
 import { IDENTITIES } from './identities';
 import type { Identity } from './identities';
@@ -8,7 +7,7 @@ import type { Racer } from './physics';
 import { standings } from './session';
 import type { RoundRecord, Session, Stat } from './session';
 import { PALETTES } from './themes';
-import { SIGNATURES, TRACK_IDS } from './signatures';
+import { SIGNATURES } from './signatures';
 import { nodeAt } from './track';
 import type { Plan, V3 } from './track';
 
@@ -17,6 +16,7 @@ const star = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 2.4 7.6
 const flags = '<svg viewBox="0 0 28 28" aria-hidden="true"><path d="M5 24V4m0 0c7-4 10 4 17 0v13c-7 4-10-4-17 0" stroke="currentColor" stroke-width="2" stroke-linejoin="round" fill="none"/><path d="M6 6h5v4H6zm5 4h5v4h-5zm5-3h5v4h-5zm0 8h5v3h-5z" fill="currentColor"/></svg>';
 const routeIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19h11a4 4 0 0 0 0-8H8a3 3 0 0 1 0-6h10M16 2l3 3-3 3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="19" r="2" fill="currentColor"/></svg>';
 const idOf = (id: number) => IDENTITIES[id - 1];
+const mapWidth = 440, mapHeight = 130, mapDetail = 2;
 const roundNumber = (n: number) => String(n).padStart(2, '0');
 const timeText = (t: number) => {
   const ticks = Math.round(t * 100);
@@ -38,10 +38,8 @@ function required<T extends Element>(host: ParentNode, selector: string) {
 
 export class Hud {
   readonly canvasHost: HTMLElement;
-  readonly controls: Operator;
   private readonly stage: HTMLElement;
   private readonly header: HTMLElement;
-  private readonly audioPrompt: HTMLButtonElement;
   private readonly main: HTMLElement;
   private readonly side: HTMLElement;
   private readonly ticker: HTMLElement;
@@ -71,25 +69,23 @@ export class Hud {
   private final = false;
   private shownCallout?: HTMLElement;
 
-  constructor(readonly root: HTMLElement, settings: Settings, update: (settings: unknown) => boolean, enable: () => Promise<boolean>, credits: () => string) {
+  constructor(readonly root: HTMLElement, settings: Settings) {
     root.innerHTML = `
       <section id="show" data-phase="prepare" data-hud="${settings.hud}" aria-label="Live race">
         <div class="world"></div><div class="vignette"></div>
         <header class="bar">
           <div class="brand"><span class="brand-icon">${icon}</span><div><b>ZEERUSH<span>.</span></b><small>MARBLE RACE SHOW</small></div></div>
           <div class="bar-track"><span class="status-indicator"></span><span id="phaseLabel">Preparing</span><span class="slash"></span><span id="themeLabel">Wooden Workshop</span></div>
-          <div class="header-right"><span class="race-id">RACE <b>01</b></span><button type="button" class="on-air sound-toggle" hidden>Enable sound</button><span class="on-air" data-clean-indicator><i></i> AUTO SHOW</span><button type="button" class="on-air settings-toggle" aria-controls="operator-panel" aria-expanded="false" title="Open show settings (O)">Settings</button></div>
+          <div class="header-right"><span class="race-id">RACE <b>01</b></span><span class="on-air"><i></i> AUTO SHOW</span></div>
         </header>
         <div class="stage"><section class="main-panel"></section><div class="marble-tags"></div><aside class="race-panel"></aside><div class="callout" hidden></div></div>
-        <section class="route-panel"><div class="route-info"></div><canvas class="course-map" width="440" height="130" aria-label="Course progress map"></canvas></section>
+        <section class="route-panel"><div class="route-info"></div><canvas class="course-map" width="${mapWidth * mapDetail}" height="${mapHeight * mapDetail}" aria-label="Course progress map"></canvas></section>
         <footer class="footer"></footer>
         <div class="loader"><b>ZEERUSH<span>.</span></b><span class="loader-line"></span><small>Preparing the starting grid</small></div>
       </section>`;
     this.stage = required(root, '#show');
     this.canvasHost = required(root, '.world');
     this.header = required(root, '.bar');
-    this.audioPrompt = required(this.header, '.sound-toggle');
-    this.audioPrompt.addEventListener('click', () => { void enable(); });
     this.main = required(root, '.main-panel');
     this.side = required(root, '.race-panel');
     this.ticker = required(root, '.route-info');
@@ -99,10 +95,7 @@ export class Hud {
     this.footer = required(root, '.footer');
     this.tags = required(root, '.marble-tags');
     this.map = required(root, '.course-map');
-    this.controls = new Operator(root, required(this.header, '.settings-toggle'), required(this.header, '[data-clean-indicator]'), settings, update, enable, credits);
   }
-
-  setAudioPrompt(blocked: boolean) { this.audioPrompt.hidden = !blocked; }
 
   load(plan: Plan, roster: readonly Identity[], number: number, settings: Settings) {
     this.plan = plan;
@@ -152,6 +145,7 @@ export class Hud {
     this.mapBase.height = this.map.height;
     const ctx = this.mapBase.getContext('2d');
     if (!ctx) return;
+    ctx.setTransform(mapDetail, 0, 0, mapDetail, 0, 0);
     const center = nodes.reduce((sum, n) => ({ x: sum.x + n.x / nodes.length, z: sum.z + n.z / nodes.length }), { x: 0, z: 0 });
     const cov = nodes.reduce((sum, n) => {
       const x = n.x - center.x, z = n.z - center.z;
@@ -163,11 +157,11 @@ export class Hud {
     const coords = nodes.map(rotated);
     const xs = coords.map(n => n[0]), zs = coords.map(n => n[1]);
     const left = Math.min(...xs), top = Math.min(...zs), width = Math.max(...xs) - left, height = Math.max(...zs) - top;
-    const scale = Math.min((this.map.width - 45) / Math.max(1, width), (this.map.height - 34) / Math.max(1, height));
+    const scale = Math.min((mapWidth - 45) / Math.max(1, width), (mapHeight - 34) / Math.max(1, height));
     this.routeXY = (p: V3) => {
       const [x, y] = rotated(p);
-      return [(this.map.width - width * scale) / 2 + (x - left) * scale,
-        (this.map.height - height * scale) / 2 + (y - top) * scale];
+      return [(mapWidth - width * scale) / 2 + (x - left) * scale,
+        (mapHeight - height * scale) / 2 + (y - top) * scale];
     };
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -198,8 +192,9 @@ export class Hud {
   private drawMap(ranked: readonly Racer[]) {
     const ctx = this.map.getContext('2d');
     if (!ctx || !this.plan) return;
-    ctx.clearRect(0, 0, this.map.width, this.map.height);
-    ctx.drawImage(this.mapBase, 0, 0);
+    ctx.setTransform(mapDetail, 0, 0, mapDetail, 0, 0);
+    ctx.clearRect(0, 0, mapWidth, mapHeight);
+    ctx.drawImage(this.mapBase, 0, 0, mapWidth, mapHeight);
     for (const [i, r] of [...ranked].reverse().entries()) {
       const [x, y] = this.routeXY(nodeAt(this.plan, r.progress.distance));
       const offset = 4 + (i % 4) * 3.4;
@@ -223,6 +218,7 @@ export class Hud {
 
   phase(phase: Phase, settings: Settings, session: Session, record: RoundRecord | undefined, finalCup?: Stat[]) {
     if (this.openPhase === phase) return;
+    if (phase === 'PREPARE' && record && this.openPhase === 'NEXT_ROUND') return;
     const keepStandings = this.openPhase === 'RACING' && phase === 'FINISHING';
     this.openPhase = phase;
     this.status = phaseLabel[phase] ?? '';
@@ -390,120 +386,4 @@ export class Hud {
     this.stage.dataset.phase = 'prepare';
     required(this.stage, '.loader small').textContent = message;
   }
-}
-
-const field = (label: string, key: keyof Settings, input: string) => `<label>${label}${input.replace('FIELD', `name="${key}"`)}</label>`;
-const numeric = (label: string, key: keyof Settings, min: number, max: number, step = 1) =>
-  field(label, key, `<input FIELD type="number" min="${min}" max="${max}" step="${step}" required>`);
-const select = (label: string, key: keyof Settings, options: readonly (string | readonly [string, string])[]) =>
-  field(label, key, `<select FIELD>${options.map(option => {
-    const [value, title] = typeof option === 'string' ? [option, option] : option;
-    return `<option value="${value}">${title}</option>`;
-  }).join('')}</select>`);
-
-export class Operator {
-  readonly element: HTMLElement;
-  private readonly form: HTMLFormElement;
-  constructor(root: HTMLElement, private readonly opener: HTMLButtonElement, private readonly indicator: HTMLElement,
-    settings: Settings, update: (value: unknown) => boolean, enable: () => Promise<boolean>, credits: () => string) {
-    this.element = document.createElement('aside');
-    this.element.className = 'operator';
-    this.element.id = 'operator-panel';
-    this.element.setAttribute('aria-labelledby', 'operator-heading');
-    this.element.hidden = settings.mode !== 'operator';
-    this.element.innerHTML = `<header><h2 id="operator-heading">Show settings</h2><button type="button" class="close" aria-label="Close show settings">×</button></header>
-      <form><fieldset><legend>Race generation</legend>
-        ${select('Generation', 'generation', [['random', 'Automatic random'], ['seeded', 'Repeatable seed']])}
-        ${field('Seed', 'seed', '<input FIELD maxlength="72" required>')}
-        ${select('Course', 'track', [['rotate', 'Shuffle all signature courses'], ['classic', 'Procedural Classic'], ...TRACK_IDS.map(id => [id, SIGNATURES[id].name] as const)])}
-        ${select('Obstacles', 'obstacles', [['standard', 'Standard'], ['extra', 'Extra'], ['original', 'Original layout']])}
-        ${select('Theme and music', 'theme', [['rotate', 'Course default'], ['random', 'Random per race'], ...THEMES.map(id => [id, PALETTES[id].name] as const)])}
-        ${select('Roster', 'roster', [['fixed', 'Same marbles, shuffled grid'], ['mixed', 'Random marbles, fixed count'], ['random', 'Random marbles and count']])}
-        ${numeric('Entrants', 'marbles', 4, 8)}${numeric('Minimum entrants', 'minMarbles', 4, 8)}${numeric('Maximum entrants', 'maxMarbles', 4, 8)}
-        ${select('Pacing', 'pace', [['fixed', 'Fixed target'], ['random', 'Random target per race']])}
-        ${numeric('Race target (s)', 'raceTarget', 60, 180)}${numeric('Minimum target (s)', 'minPace', 60, 180)}${numeric('Maximum target (s)', 'maxPace', 60, 180)}
-      </fieldset><fieldset><legend>Show timing</legend>
-        ${numeric('Selection (s)', 'pick', 3, 45)}${numeric('Countdown (s)', 'countdown', 3, 10)}
-        ${numeric('Finishing grace (s)', 'grace', 0, 8)}
-        ${numeric('Celebration (s)', 'celebration', 3, 30)}${numeric('Results (s)', 'results', 3, 30)}
-        ${select('Championship', 'championship', [['true', 'On'], ['false', 'Off']])}
-      </fieldset><fieldset><legend>Presentation</legend>
-        ${select('Quality', 'quality', ['high', 'medium', 'low'])}${select('Race HUD', 'hud', ['full', 'minimal', 'off'])}
-        ${select('Settings button', 'controls', [['show', 'Show'], ['hide', 'Hide for capture (O to open)']])}
-      </fieldset><fieldset><legend>Audio</legend>
-        ${select('Soundtrack', 'soundtrack', [['library','Licensed music library'],['synth','Original synthesized score']])}
-        ${select('Audio mix', 'audio', ['balanced', 'asmr'])}${numeric('Master', 'master', 0, 1, 0.01)}
-        ${numeric('Music', 'music', 0, 1, 0.01)}${numeric('Effects', 'effects', 0, 1, 0.01)}
-        ${select('Starting grid announcer', 'announcer', [['true','On'],['false','Off']])}${select('Mute', 'mute', ['false', 'true'])}
-        <a class="music-credit-link" href="./music/credits.html" target="_blank" rel="noopener">Music library and credits ↗</a>
-        <button type="button" class="export-credits">Download played-track credits</button>
-      </fieldset><details class="operator-diagnostics"><summary>Diagnostics</summary><pre></pre></details>
-      <div class="operator-actions"><div class="operator-buttons"><button>Apply settings</button><button type="button" class="audio-button">Enable audio</button></div>
-      <p role="status">Race changes apply at the next grid.</p></div></form>`;
-    root.append(this.element);
-    this.form = required(this.element, 'form');
-    required(this.form,'.export-credits').addEventListener('click', () => {
-      const text = credits();
-      if (!text) { required(this.form,'p').textContent = 'No library recordings have played since opening the show.'; return; }
-      const url = URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'}));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'zeerush-played-music-credits.txt';
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url),2000);
-    });
-    this.opener.setAttribute('aria-expanded', String(!this.element.hidden));
-    this.set(settings);
-    this.form.addEventListener('change', () => this.showRelevantFields());
-    this.form.addEventListener('submit', e => {
-      e.preventDefault();
-      const saved = update(Object.fromEntries(new FormData(this.form)));
-      required(this.form, 'p').textContent = `${saved ? 'Saved.' : 'Applied for this tab.'} Race changes apply at the next grid.`;
-    });
-    required(this.element, '.audio-button').addEventListener('click', () => {
-      void enable().then(ok => { required(this.form, 'p').textContent = ok ? 'Audio enabled.' : 'Audio is awaiting a browser gesture.'; });
-    });
-    required(this.element, '.close').addEventListener('click', () => this.close());
-    this.opener.addEventListener('click', () => this.toggle());
-  }
-  set(settings: Settings) {
-    for (const [k, v] of Object.entries(settings)) {
-      const input = this.form.elements.namedItem(k);
-      if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement) input.value = String(v);
-    }
-    this.opener.hidden = settings.controls === 'hide';
-    this.indicator.hidden = !this.opener.hidden;
-    this.showRelevantFields();
-  }
-  private showRelevantFields() {
-    const value = (name: keyof Settings) => (this.form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement).value;
-    const visible = (name: keyof Settings, show: boolean) => {
-      const input = this.form.elements.namedItem(name) as HTMLInputElement;
-      input.disabled = !show;
-      input.closest('label')!.hidden = !show;
-    };
-    visible('seed', value('generation') === 'seeded');
-    visible('obstacles', value('track') !== 'classic');
-    const randomCount = value('roster') === 'random';
-    visible('marbles', !randomCount);
-    visible('minMarbles', randomCount);
-    visible('maxMarbles', randomCount);
-    const randomPace = value('pace') === 'random';
-    visible('raceTarget', !randomPace);
-    visible('minPace', randomPace);
-    visible('maxPace', randomPace);
-  }
-  close() {
-    if (this.element.hidden) return;
-    this.element.hidden = true;
-    this.opener.setAttribute('aria-expanded', 'false');
-    this.opener.focus();
-  }
-  toggle() {
-    if (!this.element.hidden) { this.close(); return; }
-    this.element.hidden = false;
-    this.opener.setAttribute('aria-expanded', 'true');
-    required<HTMLButtonElement>(this.element, '.close').focus();
-  }
-  diagnostics(value: string) { if (!this.element.hidden) required(this.form, 'pre').textContent = value; }
 }

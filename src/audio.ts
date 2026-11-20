@@ -114,7 +114,7 @@ export class ShowAudio {
   private gridCall: 'full' | 'short' | null = null;
   private unavailable = false;
 
-  constructor(private settings: Settings, private readonly stateChanged: () => void, private readonly showId = '') {}
+  constructor(private readonly settings: Settings, private readonly showId = '') {}
 
   get status() {
     if (this.settings.mute) return 'Muted';
@@ -132,7 +132,6 @@ export class ShowAudio {
       this.syncState();
     } catch {
       this.unavailable = true;
-      this.stateChanged();
     }
   }
 
@@ -152,7 +151,6 @@ export class ShowAudio {
   private syncState() {
     this.mix();
     if (this.ctx?.state === 'running') this.playTheme();
-    this.stateChanged();
   }
 
   private open() {
@@ -171,7 +169,6 @@ export class ShowAudio {
     this.music.connect(this.duck).connect(this.master);
     this.library = new Soundtrack(ctx, this.music, this.settings.generation === 'random' ? this.showId : this.settings.seed, () => {
       if (ctx.state === 'running') this.playTheme();
-      this.stateChanged();
     });
     this.effects.connect(this.master);
     this.master.connect(this.limiter).connect(ctx.destination);
@@ -206,14 +203,6 @@ export class ShowAudio {
     }
     ctx.onstatechange = () => this.syncState();
     void this.loadGridRecording();
-  }
-
-  configure(settings: Settings) {
-    this.settings = settings;
-    this.start();
-    if (this.gridVoiceEnabled) void this.loadGridRecording();
-    else this.stopGridCall();
-    this.syncState();
   }
 
   setPhase(phase: Phase, theme: Theme, isFinal = false) {

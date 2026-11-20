@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { test, before } from 'node:test';
 import { Vector3 } from 'three';
-import { raceSettings, settingsFrom, THEMES } from '../src/config';
-import { bayOffset, finishPoint, finishRack, ROLLOUT_SECONDS, rolloutPosition } from '../src/finish-runout';
+import { broadcastSettings, raceSettings, settingsFrom, THEMES } from '../src/config';
+import { bayOffset, finishPoint, finishRack, podiumLayout, ROLLOUT_SECONDS, rolloutPosition } from '../src/finish-runout';
 import { IDENTITIES, rosterFor, RADIUS } from '../src/identities';
 import { GridCrew } from '../src/grid-crew';
-import { gridThrows, PAW } from '../src/grid-launch';
+import { gridThrows, HOST_SCALE, PAD_HEIGHT, throwPose } from '../src/grid-launch';
 import { Lifecycle } from '../src/lifecycle';
 import { LiveOrder } from '../src/live-order';
 import { CAP, devicePose, initPhysics, RacePhysics, RECOVERY_LIMIT, STEP } from '../src/physics';
@@ -25,6 +25,38 @@ test('settings clamp and query overrides saved values', () => {
   assert.deepEqual([config.marbles, config.raceTarget, config.audio, config.music, config.seed, config.master, config.mute, config.theme],
     [8, 60, 'balanced', 0, 'saved', 0.49, true, 'night']);
   assert.equal(settingsFrom({}, '?pick=&countdown=Infinity&marbles=no').pick, 12);
+});
+
+test('the source URL owns only the six broadcast options across reloads', () => {
+  const setup = broadcastSettings('?track=cedar-creek&marbles=8&raceTarget=80&seed=replay&quality=low&mute=1&pick=3&grace=0&hud=off&announcer=0');
+  assert.deepEqual([setup.track, setup.marbles, setup.raceTarget, setup.seed, setup.generation, setup.quality, setup.mute],
+    ['cedar-creek', 8, 80, 'replay', 'seeded', 'low', true]);
+  assert.deepEqual([setup.pick, setup.grace, setup.hud, setup.announcer], [12, 8, 'full', true]);
+  const random = broadcastSettings('?marbles=random&raceTarget=random');
+  assert.deepEqual([random.roster, random.pace], ['random', 'random']);
+  const historic = freshSession(setup, 'old-profile');
+  historic.next = 3;
+  historic.stats[0].points = 18;
+  let raw = JSON.stringify({ ...historic, settings: { ...setup, hud: 'off', controls: 'show' } });
+  const storage = { getItem: () => raw, setItem: (_: string, value: string) => { raw = value; } };
+  const resumed = loadSession(storage);
+  assert.deepEqual(resumed.settings, broadcastSettings(''));
+  assert.deepEqual([resumed.next, resumed.stats[0].points], [3, 18]);
+  assert.ok(saveSession(storage, resumed));
+  assert.equal('settings' in JSON.parse(raw), false);
+});
+
+test('every entrant gets exactly one ceremony place, including a field of non-finishers', () => {
+  for (let count = 4; count <= 8; count++) for (let finishers = 0; finishers <= count; finishers++) {
+    const places = Array.from({length: count}, (_, i) => ({
+      id: count - i, time: i < finishers ? 62 + i : null, distance: 100 - i, recoveries: 0,
+    }));
+    const {medals, field, pitch, size} = podiumLayout(places);
+    assert.deepEqual([...medals, ...field], places);
+    assert.equal(medals.length, Math.min(3, finishers));
+    assert.ok(medals.every(p => p.time !== null));
+    assert.ok(size * .8 < pitch && (field.length - 1) * pitch <= 4.12 + 1e-6);
+  }
 });
 
 test('show configuration generates fresh layouts by session and bounded fields by race', () => {
@@ -65,10 +97,10 @@ test('every entrant stays in its own host’s hand until a simultaneous launch w
         for (const r of race.racers) {
           const center = new Vector3();
           crew.ball(r.lane, center);
-          const arm = hosts[r.lane].children[0];
-          const palm = arm.localToWorld(new Vector3(PAW.x, PAW.y, PAW.z));
+          const hand = hosts[r.lane].getObjectByName('Palm')!;
+          const palm = hand.localToWorld(new Vector3(0, PAD_HEIGHT, throwPose(r.launch, time).roll));
           assert.ok(Math.hypot(palm.x - center.x, palm.z - center.z) < 1e-8);
-          assert.ok(center.y - palm.y > RADIUS && center.y - palm.y < RADIUS + .1);
+          assert.ok(Math.abs(center.y - palm.y - RADIUS) < 1e-8);
           if (time <= -3) assert.ok(center.distanceTo(r.p) < 1e-8);
           if (time === -.00001) before[r.lane].copy(center);
           if (time === 0) release[r.lane].copy(center);
@@ -83,6 +115,8 @@ test('every entrant stays in its own host’s hand until a simultaneous launch w
         const center = release[racer.lane], velocity = new Vector3().copy(racer.body.linvel());
         assert.ok(center.distanceTo(racer.body.translation()) < 1e-5);
         assert.ok(center.clone().sub(before[racer.lane]).multiplyScalar(1e5).distanceTo(velocity) < .001);
+        const spin = racer.body.angvel();
+        assert.ok(Math.abs(Math.hypot(spin.x, spin.y, spin.z) * RADIUS - 2 * HOST_SCALE * racer.launch.travel / .13) < 1e-5);
         assert.ok(Math.abs(center.z - release[0].z) < 1e-8);
         speeds.push(velocity.length());
         heights.push(Math.atan2(velocity.y, Math.hypot(velocity.x, velocity.z)) * 180 / Math.PI);
@@ -100,6 +134,7 @@ test('every entrant stays in its own host’s hand until a simultaneous launch w
         }
       }
       assert.equal(landed.size, count);
+      assert.ok(race.racers.every(r => r.firstLanding !== undefined && r.firstLanding > .2));
       assert.ok(race.racers.every(r => r.progress.segment > 2 && !r.dnf));
       assert.equal(race.recoveries.length, 0);
     } finally { crew.dispose(); race.dispose(); }
@@ -144,7 +179,7 @@ test('live positions hold near-ties, settle sustained passes and snap to finish 
 });
 
 test('adaptive scale reacts to a busy window, retains its scale at handoff and recovers gradually', () => {
-  const quality = new AdaptiveScale('high');
+  const quality = new AdaptiveScale('medium');
   const sample = (count: number, ms: number) => { for (let i = 0; i < count; i++) quality.sample(ms); };
   sample(1, 800);
   assert.equal(quality.scale, 1);
@@ -156,8 +191,9 @@ test('adaptive scale reacts to a busy window, retains its scale at handoff and r
   assert.ok(Math.abs(quality.scale - 0.93) < 1e-9);
   sample(120, 17);
   assert.ok(Math.abs(quality.scale - 0.965) < 1e-9);
-  quality.setQuality('medium');
-  assert.equal(quality.scale, 0.79);
+  quality.setQuality('high');
+  sample(200, 33);
+  assert.equal(quality.scale, 1);
 });
 
 test('camera track samples remain continuous across short starting-section joins', () => {
@@ -560,5 +596,5 @@ test('storage failure, corrupt data and interrupted race resume safely', () => {
   assert.equal(resumed.abandoned, 1);
   assert.equal(resumed.stats[2].points, 10);
   assert.equal(resumed.lastCommit, `${s.id}/1`);
-  assert.equal(loadSession(storage, '?session=fresh').next, 1);
+  assert.equal(loadSession(storage, '?session=fresh').next, resumed.next);
 });

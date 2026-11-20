@@ -1,4 +1,4 @@
-import { branchContact, chuteClearance, clamp, point, side, stationAlong } from './track';
+import { branchContact, chuteClearance, clamp, deckPoint, point, side, stationAlong } from './track';
 import type { Module, Plan, Sample, V3 } from './track';
 
 export type Progress = { check: number; segment: number; distance: number; best: number; branch: number };
@@ -13,7 +13,7 @@ export function crossing(node: Sample, from: V3, to: V3, module?: Module) {
     const contact = branchContact(node, module, u, p.y, .25);
     return contact && contact.dy > -.30 && contact.dy < 1.85 ? t : null;
   }
-  const height = node.pitch === undefined ? p.y - point(node, u).y : chuteClearance(node, p);
+  const height = node.pitch !== undefined ? chuteClearance(node, p) : p.y - (module ? deckPoint(node, module, u) : point(node, u)).y;
   return Math.abs(u) < node.half + 0.15 && Math.abs(height) < 2.05 ? t : null;
 }
 
@@ -37,8 +37,9 @@ export function routeProgress(plan: Plan, progress: Progress, from: V3, to: V3) 
   const u = side(n, to);
   const module = plan.modules[n.module];
   const contact = module.track ? branchContact(n, module, u, to.y, .48) : undefined;
-  const height = n.pitch === undefined ? to.y - point(n, u).y : chuteClearance(n, to);
-  if (module.track ? contact && Math.abs(contact.dy) < 2 : Math.abs(u) < n.half + 0.36 && Math.abs(height) < 2) {
+  const onRoute = module.track ? contact && Math.abs(contact.dy) < 2 : Math.abs(u) < n.half + .36
+    && Math.abs(n.pitch === undefined ? to.y - deckPoint(n, module, u).y : chuteClearance(n, to)) < 2;
+  if (onRoute) {
     const d = clamp(n.s + stationAlong(n, to), plan.nodes[lo].s, plan.nodes[hi].s - 0.001);
     progress.distance = d;
     progress.best = Math.max(d, progress.best);
