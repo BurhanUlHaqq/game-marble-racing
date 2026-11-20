@@ -228,7 +228,7 @@ class CourseScene {
   private readonly scenery: TracksideScenery;
   private readonly marbleMats: T.MeshPhysicalMaterial[];
   private readonly grid: ReturnType<typeof gridSurface>;
-  private readonly meshes = new Map<number, { marble: T.Mesh; shadow: ContactShadow; ring: T.Mesh; label: T.Vector3 }>();
+  private readonly meshes = new Map<number, { marble: T.Mesh; shadow: ContactShadow; ring: T.Mesh }>();
   private readonly particles = new T.InstancedMesh(box, new T.MeshBasicMaterial({ color: '#ffffff' }), 80);
   private readonly scratch = new T.Object3D();
   private readonly disposable: { dispose(): void }[] = [];
@@ -281,6 +281,10 @@ class CourseScene {
     const p = sig ? { ...base, sky: sig.colors[0], fog: sig.colors[0], deck: sig.colors[1],
       wood: sig.colors[1], trim: sig.colors[2], pop: sig.colors[3], second: sig.colors[4] } : base;
     const m = materials(p, this.grain);
+    // These panels pass in front of the race camera. The rim and supports outline the cover.
+    const clearCover = m.acrylic.clone();
+    clearCover.opacity = .105;
+    clearCover.forceSinglePass = true;
     if (sig) {
       const patterned = ['cardboard', 'bamboo', 'clay', 'felt', 'cloth', 'sandstone', 'slate', 'vinyl', 'snow', 'grit'];
       const floors = new Set(plan.modules.flatMap(module => [module.surface, ...(module.bands?.map(b => b.surface) ?? [])]));
@@ -292,7 +296,7 @@ class CourseScene {
       }
     }
     this.disposable.push(...new Set([...Object.values(m.surface),
-      m.acrylic, m.trim, m.pop, m.second, m.deck, m.cream, m.dark, m.gold, m.softGold, m.check, m.blinker]));
+      m.acrylic, clearCover, m.trim, m.pop, m.second, m.deck, m.cream, m.dark, m.gold, m.softGold, m.check, m.blinker]));
     this.scene.background = new T.Color(p.sky);
     this.scene.fog = new T.FogExp2(p.fog, sig ? 0.014 : 0.023);
     this.fill.color.set(p.ambient);
@@ -311,7 +315,7 @@ class CourseScene {
         mesh(this.route, slab, m.surface[surface], zero).receiveShadow = true;
         this.disposable.push(slab);
       }
-      const wall = mesh(this.route, rails, m.acrylic, zero);
+      const wall = mesh(this.route, rails, module.dropDegrees || module.kind === 'tunnel' ? clearCover : m.acrylic, zero);
       wall.renderOrder = 2;
       this.disposable.push(rails);
       for (let i = module.from; i < module.to; i++) {
@@ -409,7 +413,7 @@ class CourseScene {
       const ring = mesh(this.route, torus, m.cream, position, { x: 0.39, y: 0.39, z: 0.16 });
       ring.rotation.x = -Math.PI / 2;
       ring.position.y -= RADIUS - .02;
-      this.meshes.set(identity.id, { marble, shadow, ring, label: new T.Vector3() });
+      this.meshes.set(identity.id, { marble, shadow, ring });
     }
   }
 
@@ -495,17 +499,18 @@ class CourseScene {
   private finish(d: Details, m: Materials, plan: Plan) {
     const n = plan.nodes[plan.finish], last = plan.nodes[plan.finalSection];
     for (const [index, node] of [last, n].entries()) {
+      const height = index ? 5.15 : 4.45;
       for (const s of [-1, 1]) {
-        const base = point(node, (node.half + 0.22) * s, 1.32);
-        d.add(box, index ? m.dark : m.pop, base, 0.36, 2.85, 0.42, node.yaw);
-        d.add(box, m.second, nudged(base, -1.33), 0.62, 0.42, 0.54, node.yaw);
+        const across = (node.half + 0.22) * s;
+        d.add(box, index ? m.dark : m.pop, point(node, across, height / 2), 0.36, height, 0.42, node.yaw);
+        d.add(box, m.second, point(node, across, 0), 0.62, 0.42, 0.54, node.yaw);
       }
-      d.add(box, m.dark, point(node, 0, 2.83), node.half * 2 + 0.8, 0.66, 0.34, node.yaw);
+      d.add(box, m.dark, point(node, 0, height), node.half * 2 + 0.8, 0.66, 0.34, node.yaw);
       const sign = this.sign(index ? 'FINISH' : 'FINAL SECTOR', 'Z E E R U S H', '#fff2d9', '#263645', this.route,
-        { x: node.x + Math.sin(node.yaw) * 0.18, y: node.y + 2.85, z: node.z + Math.cos(node.yaw) * 0.18 }, 3.2, 0.6);
+        { x: node.x + Math.sin(node.yaw) * 0.18, y: node.y + height, z: node.z + Math.cos(node.yaw) * 0.18 }, 3.2, 0.6);
       sign.rotation.y = node.yaw;
       const back = this.sign(index ? 'FINISH' : 'FINAL SECTOR', 'Z E E R U S H', '#fff2d9', '#263645', this.route,
-        { x: node.x - Math.sin(node.yaw) * 0.18, y: node.y + 2.85, z: node.z - Math.cos(node.yaw) * 0.18 }, 3.2, 0.6);
+        { x: node.x - Math.sin(node.yaw) * 0.18, y: node.y + height, z: node.z - Math.cos(node.yaw) * 0.18 }, 3.2, 0.6);
       back.rotation.y = node.yaw + Math.PI;
     }
     for (let i = 0; i < 16; i++) for (let j = 0; j < 2; j++) {
@@ -685,7 +690,7 @@ class CourseScene {
     this.podium.visible = hasPodium;
     this.route.visible = !hasPodium;
     const cameraPhase = hasPodium ? phase : postRace ? race.finishers.length ? 'FINISHING' : 'PICK_MARBLE' : phase;
-    this.camera.update(this.plan, ranked, cameraPhase, dt, phaseTime, this.podiumAt);
+    this.camera.update(this.plan, ranked, cameraPhase, dt, phaseTime, this.podiumAt, alpha);
     const interpolated = Math.max(0, race.elapsed - STEP * (1 - alpha));
     if (this.gridCrew) {
       this.gridCrew.group.visible = !hasPodium && (!race.released || (ranked[0]?.progress.distance ?? 0) < 26);
@@ -696,7 +701,7 @@ class CourseScene {
     this.deckLights.forEach((lamp, i) => { lamp.visible = phase === 'COUNTDOWN' ? i < Math.ceil(countdownLeft) : !race.released; });
     for (const r of race.racers) {
       const group = this.meshes.get(r.id)!;
-      const { marble, shadow, ring, label } = group;
+      const { marble, shadow, ring } = group;
       marble.visible = shadow.visible = !r.dnf && !hasPodium;
       ring.visible = queued && marble.visible;
       if (!marble.visible) continue;
@@ -719,8 +724,6 @@ class CourseScene {
         else marble.position.copy(r.previous).lerp(r.p, alpha);
         marble.quaternion.copy(r.previousQ).slerp(this.scratch.quaternion.copy(r.q), alpha);
       }
-      label.copy(marble.position);
-      label.y += 0.58;
       const support = queued ? this.grid : rollout ? undefined : r.ground;
       const receiver = support ?? race.floorBelow(marble.position, 3);
       this.placeContactShadow(shadow, marble.position, receiver);
@@ -801,7 +804,15 @@ class CourseScene {
 
   racerScreen(id: number) {
     const group = this.meshes.get(id);
-    return group?.marble.visible ? this.screen(group.label) : undefined;
+    if (!group?.marble.visible) return;
+    const center = group.marble.position, result = this.screen(center);
+    if (result.visible) {
+      const camera = this.camera.value;
+      const depth = -this.projected.copy(center).applyMatrix4(camera.matrixWorldInverse).z;
+      result.y -= .5 * camera.projectionMatrix.elements[5] * RADIUS / depth + .020;
+      result.visible = result.y > .094;
+    }
+    return result;
   }
 
   finishDisplay() {

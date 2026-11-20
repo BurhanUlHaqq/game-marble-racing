@@ -28,11 +28,15 @@ export function heldMarble(host: GridThrow, angle: number, out: V3) {
   return out;
 }
 
+export function gridSpan(entrants: number) {
+  return Math.min(6.1, 1.4 * (entrants - 1));
+}
+
 export function gridThrows(plan: Plan, entrants: number): GridThrow[] {
   const start = plan.nodes[0], rng = new Random(plan.seed + '/grid-throws');
   const lanes = Array.from({ length: entrants }, (_, i) => i);
   const speeds = rng.shuffle(lanes), pitches = rng.shuffle(lanes);
-  const spacing = Math.min(1.4, 6.1 / Math.max(1, entrants - 1));
+  const spacing = gridSpan(entrants) / Math.max(1, entrants - 1);
   return lanes.map(lane => {
     const across = (lane - (entrants - 1) / 2) * spacing;
     const yaw = start.yaw - .034 * across + rng.float(-.044, .044);

@@ -370,9 +370,11 @@ export class Hud {
       const marker = this.markerEls.get(r.id);
       if (!marker) continue;
       const position = active && !r.dnf ? project(r.id) : undefined;
-      marker.hidden = !position?.visible || position.x > 0.78;
+      const behindPanel = position && ((!this.side.hidden && position.x > .758 && position.y < .51)
+        || (position.x > .79 && position.y > .74));
+      marker.hidden = !position?.visible || Boolean(behindPanel);
       if (position?.visible && !marker.hidden) marker.style.transform = `translate(${position.x * 100}cqw,${position.y * 100}cqh) translate(-50%, -50%)`;
-      this.rankEls.get(r.id)?.classList.toggle('offscreen', position !== undefined && !position.visible);
+      this.rankEls.get(r.id)?.classList.toggle('offscreen', Boolean(position) && marker.hidden);
     }
   }
 
