@@ -1,0 +1,31 @@
+// Contact, rendering and synthesis share this catalog.
+export const SURFACES = {
+  wood:      { grip: .62, bounce: .15, drag: 0,     tint: '#d7a36e', rough: .57, metal: 0,   roll: 430, tones: [340, 680, .075] },
+  acrylic:   { grip: .43, bounce: .18, drag: 0,     tint: '#70c7c7', rough: .25, metal: .15, roll: 1550, tones: [1230, 2341, .145] },
+  plastic:   { grip: .48, bounce: .13, drag: 0,     tint: '#eab183', rough: .28, metal: .04, roll: 760, tones: [630, 1450, .089] },
+  metal:     { grip: .55, bounce: .20, drag: 0,     tint: '#b1b8b5', rough: .27, metal: .55, roll: 1130, tones: [855, 2100, .165] },
+  rubber:    { grip: .79, bounce: .045, drag: 0,    tint: '#526777', rough: .8, metal: .02, roll: 290, tones: [132, 330, .057] },
+  cardboard: { grip: .59, bounce: .09, drag: .049, tint: '#cc965b', rough: .83, metal: 0,   roll: 850, tones: [405, 1030, .048] },
+  tape:      { grip: .43, bounce: .07, drag: .005, tint: '#4f9ccb', rough: .22, metal: .09, roll: 1930, tones: [950, 1862, .073] },
+  bamboo:    { grip: .56, bounce: .12, drag: .012, tint: '#dbbb72', rough: .46, metal: 0,   roll: 670, tones: [487, 1148, .125] },
+  cork:      { grip: .8,  bounce: .035,drag: .068, tint: '#9e694b', rough: .94, metal: 0,   roll: 250, tones: [184, 408, .055] },
+  clay:      { grip: .72, bounce: .07, drag: .04,  tint: '#cc7656', rough: .91, metal: 0,   roll: 725, tones: [365, 808, .071] },
+  glaze:     { grip: .42, bounce: .22, drag: .001, tint: '#e2eefb', rough: .17, metal: .08, roll: 1260, tones: [1047, 2280, .205] },
+  brass:     { grip: .48, bounce: .13, drag: .008, tint: '#d5ab50', rough: .32, metal: .68, roll: 1100, tones: [580, 1740, .21] },
+  copper:    { grip: .45, bounce: .10, drag: .005, tint: '#cf855f', rough: .24, metal: .53, roll: 1010, tones: [740, 1348, .15] },
+  ice:       { grip: .27, bounce: .08, drag: .001, tint: '#7fcfe9', rough: .23, metal: .13, roll: 2270, tones: [1103, 2731, .116] },
+  snow:      { grip: .81, bounce: .025,drag: .17,  tint: '#eef2f5', rough: .95, metal: 0,   roll: 390, tones: [190, 1160, .06] },
+  felt:      { grip: .82, bounce: .035,drag: .062, tint: '#a95882', rough: .98, metal: 0,   roll: 335, tones: [150, 365, .055] },
+  cloth:     { grip: .76, bounce: .12, drag: .04,  tint: '#e6887e', rough: .87, metal: 0,   roll: 420, tones: [168, 310, .11] },
+  satin:     { grip: .44, bounce: .065,drag: .007, tint: '#9c88dc', rough: .29, metal: .14, roll: 1530, tones: [834, 1970, .055] },
+  steel:     { grip: .49, bounce: .21, drag: .006, tint: '#ccd9df', rough: .31, metal: .51, roll: 1250, tones: [910, 2262, .128] },
+  enamel:    { grip: .55, bounce: .17, drag: .012, tint: '#f1dfb7', rough: .34, metal: .10, roll: 830, tones: [415, 980, .072] },
+  sandstone: { grip: .72, bounce: .06, drag: .045, tint: '#cc8d6a', rough: .97, metal: 0,   roll: 245, tones: [220, 535, .09] },
+  slate:     { grip: .50, bounce: .18, drag: .009, tint: '#7d9098', rough: .56, metal: .05, roll: 590, tones: [535, 1460, .107] },
+  vinyl:     { grip: .57, bounce: .075,drag: .018, tint: '#292b38', rough: .40, metal: .13, roll: 510, tones: [275, 865, .065] },
+  grit:      { grip: .90, bounce: .025,drag: .26,  tint: '#334450', rough: .96, metal: 0,   roll: 445, tones: [226, 461, .058] },
+  brakepad:  { grip: .95, bounce: .012,drag: .27,  tint: '#a45c40', rough: .97, metal: 0,   roll: 245, tones: [162, 325, .042] },
+  slide:     { grip: .31, bounce: .045,drag: .003,tint: '#79aeb6', rough: .24, metal: .48, roll: 1760, tones: [860, 1710, .106] },
+} satisfies Record<string, { grip: number; bounce: number; drag: number; tint: string; rough: number; metal: number; roll: number; tones: [number, number, number] }>;
+
+export type Surface = keyof typeof SURFACES;

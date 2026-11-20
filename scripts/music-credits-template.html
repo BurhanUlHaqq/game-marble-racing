@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Music credits · ZeeRush Marble Race Show</title>
+<style>
+:root{color-scheme:dark;font:16px/1.5 system-ui,sans-serif;background:#17252c;color:#f3eee4}body{max-width:54rem;margin:0 auto;padding:2rem 1rem 5rem}
+h1,h2{line-height:1.15}h1{font-size:clamp(2rem,6vw,3.4rem);margin-bottom:.4rem}h2{margin-top:2rem}a{color:#a1dfd4}
+li{display:flex;align-items:center;gap:1rem;border-bottom:1px solid #405058;padding:.55rem 0}ol{padding:0}
+button{background:#253b45;color:#fff3da;border:1px solid #70868b;border-radius:5px;padding:.4rem .75rem;font:inherit;cursor:pointer}
+li a{margin-left:auto}nav{display:flex;gap:1rem;flex-wrap:wrap}aside{position:sticky;top:0;background:#17252cf2;padding:.6rem 0}audio{width:min(100%,32rem);vertical-align:middle}#now{margin:.2rem 0}small{color:#d8be8a}
+</style></head><body><h1>Music credits</h1><p>ZeeRush Marble Race Show · Instrumental music by Kevin MacLeod.</p>
+<p>All recordings are licensed under Creative Commons Attribution 4.0. The game uses loudness-adjusted Opus versions.
+<a href="https://creativecommons.org/licenses/by/4.0/">Read the license</a> · <a href="https://incompetech.com/music/royalty-free/faq.html">Composer’s usage guide</a></p>
+<nav><a download href="youtube-credits.txt">Download YouTube credits</a><a download href="credits.txt">Download full attribution</a></nav>
+<aside><p id="now" aria-live="polite">Choose a recording to preview.</p><audio id="player" controls preload="none"></audio></aside>
+@TRACKS@
+<script>
+const player=document.getElementById('player'),statusLine=document.getElementById('now');
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('button[data-file]');
+  if(!button)return;
+  player.src=button.dataset.file;
+  statusLine.textContent=button.dataset.title+' · Kevin MacLeod';
+  try{await player.play()}catch{statusLine.textContent='Press play to preview '+button.dataset.title}
+});
+</script></body></html>
